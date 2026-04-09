@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpsBoard</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%236366f1'/><rect x='1' y='1' width='6' height='6' rx='1' fill='white' opacity='0.9'/><rect x='9' y='1' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='1' y='9' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='9' y='9' width='6' height='6' rx='1' fill='white' opacity='0.9'/></svg>"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .task-row:hover { background: #1e293b; }
+    textarea:focus, input:focus, select:focus { outline: none; }
+    .badge-critical { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+    .badge-high    { background: #431407; color: #fdba74; border: 1px solid #7c2d12; }
+    .badge-medium  { background: #1c1917; color: #d6d3d1; border: 1px solid #44403c; }
+    .badge-low     { background: #0c4a6e; color: #7dd3fc; border: 1px solid #075985; }
+    .status-todo       { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+    .status-inprogress { background: #1e3a5f; color: #93c5fd; border: 1px solid #1d4ed8; }
+    .status-review     { background: #2e1065; color: #c4b5fd; border: 1px solid #6d28d9; }
+    .status-blocked    { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+    .status-done       { background: #052e16; color: #86efac; border: 1px solid #166534; }
+    .kanban-col { min-height: 400px; }
+    .fade-in { animation: fadeIn 0.15s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .settings-section { background: #0f172a; border: 1px solid #1e293b; border-radius: 0.5rem; padding: 1.25rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const STATUSES   = ["Todo", "In Progress", "Review", "Blocked", "Done"];
+const PRIORITIES = ["Critical", "High", "Medium", "Low"];
+
+const DEFAULT_SETTINGS = {
+  appName:    "OpsBoard",
+  domain:     "",
+  userName:   "James Gallagher",
+  initials:   "JG",
+  assignees:  ["James G.", "Sarah K.", "Dev Ops", "Unassigned"],
+  categories: ["Vulnerability", "Deployment", "Security", "Incident", "Compliance", "Infrastructure", "Monitoring", "Patch"],
+  accentColor: "#6366f1",
+};
+
+const CATEGORY_COLORS = {
+  Vulnerability: "text-red-400", Deployment: "text-blue-400", Security: "text-purple-400",
+  Incident: "text-orange-400", Compliance: "text-yellow-400", Infrastructure: "text-cyan-400",
+  Monitoring: "text-emerald-400", Patch: "text-pink-400",
+};
+
+const SEED_TASKS = [
+  {
+    id: 1, title: "Patch CVE-2025-44228 on all production nodes",
+    description: "Log4Shell variant affecting container runtime. All prod nodes require emergency patching.\n\nScope: 14 nodes across eu-west-1 and us-east-1.\nImpact: Remote code execution if unpatched.",
+    status: "In Progress", priority: "Critical", category: "Vulnerability",
+    assignee: "James G.", dueDate: "2026-04-10",
+    tags: ["CVE", "Log4j", "Production"],
+    checklist: [
+      { id: 1, text: "Identify affected nodes", done: true },
+      { id: 2, text: "Test patch in staging", done: true },
+      { id: 3, text: "Rolling deploy to prod", done: false },
+      { id: 4, text: "Verify with vulnerability scanner", done: false },
+    ],
+    createdAt: "2026-04-08"
+  },
+  {
+    id: 2, title: "Kubernetes v1.31 cluster upgrade — eu-west-1",
+    description: "Scheduled minor version upgrade. Control plane first, then worker nodes via rolling update.",
+    status: "Todo", priority: "High", category: "Deployment",
+    assignee: "Sarah K.", dueDate: "2026-04-15",
+    tags: ["Kubernetes", "Upgrade"],
+    checklist: [
+      { id: 1, text: "Backup etcd snapshot", done: false },
+      { id: 2, text: "Upgrade control plane", done: false },
+      { id: 3, text: "Drain and upgrade node group 1", done: false },
+      { id: 4, text: "Drain and upgrade node group 2", done: false },
+      { id: 5, text: "Run conformance tests", done: false },
+    ],
+    createdAt: "2026-04-07"
+  },
+  {
+    id: 3, title: "SOC 2 Type II — access review audit",
+    description: "Quarterly access review required for SOC 2 compliance. Revoke orphaned accounts and document exceptions.",
+    status: "Review", priority: "High", category: "Compliance",
+    assignee: "James G.", dueDate: "2026-04-20",
+    tags: ["SOC2", "Audit", "IAM"],
+    checklist: [
+      { id: 1, text: "Export IAM user report", done: true },
+      { id: 2, text: "Identify orphaned accounts", done: true },
+      { id: 3, text: "Get manager sign-off on access list", done: false },
+      { id: 4, text: "Revoke stale accounts", done: false },
+    ],
+    createdAt: "2026-04-05"
+  },
+  {
+    id: 4, title: "Incident: API gateway 5xx spike — 2026-04-08",
+    description: "Production API gateway returned 5xx for ~12 minutes between 14:22–14:34 UTC. Root cause: Redis connection pool exhaustion.",
+    status: "Done", priority: "Critical", category: "Incident",
+    assignee: "Dev Ops", dueDate: "2026-04-09",
+    tags: ["P1", "API", "Redis"],
+    checklist: [
+      { id: 1, text: "Acknowledge and open war room", done: true },
+      { id: 2, text: "Identify root cause", done: true },
+      { id: 3, text: "Deploy hotfix", done: true },
+      { id: 4, text: "Write post-mortem", done: true },
+    ],
+    createdAt: "2026-04-08"
+  },
+  {
+    id: 5, title: "Deploy WAF ruleset v3.2 to Cloudflare",
+    description: "Updated managed WAF rules including OWASP CRS 4.0. Test on staging zone before production rollout.",
+    status: "Todo", priority: "Medium", category: "Security",
+    assignee: "James G.", dueDate: "2026-04-18",
+    tags: ["WAF", "Cloudflare", "OWASP"],
+    checklist: [
+      { id: 1, text: "Review new rule changes", done: false },
+      { id: 2, text: "Deploy to staging zone", done: false },
+      { id: 3, text: "Monitor false positive rate for 24h", done: false },
+      { id: 4, text: "Promote to production", done: false },
+    ],
+    createdAt: "2026-04-06"
+  },
+  {
+    id: 6, title: "Set up Falco runtime security on EKS",
+    description: "Deploy Falco as DaemonSet across all EKS clusters to detect anomalous runtime behaviour. Integrate alerts with PagerDuty.",
+    status: "In Progress", priority: "High", category: "Security",
+    assignee: "Sarah K.", dueDate: "2026-04-22",
+    tags: ["Falco", "EKS", "Runtime"],
+    checklist: [
+      { id: 1, text: "Install Falco via Helm", done: true },
+      { id: 2, text: "Configure custom rules", done: false },
+      { id: 3, text: "Wire to PagerDuty webhook", done: false },
+    ],
+    createdAt: "2026-04-04"
+  },
+  {
+    id: 7, title: "Terraform state migration to S3 remote backend",
+    description: "Move all local Terraform state files to S3 with DynamoDB locking. Required before team expansion.",
+    status: "Blocked", priority: "Medium", category: "Infrastructure",
+    assignee: "James G.", dueDate: "2026-04-25",
+    tags: ["Terraform", "IaC", "S3"],
+    checklist: [
+      { id: 1, text: "Create S3 bucket + DynamoDB table", done: true },
+      { id: 2, text: "Migrate dev workspace", done: false },
+      { id: 3, text: "Migrate staging workspace", done: false },
+      { id: 4, text: "Migrate prod workspace", done: false },
+    ],
+    createdAt: "2026-04-03"
+  },
+  {
+    id: 8, title: "Implement SIEM alerting for brute force detection",
+    description: "Configure Elastic SIEM rules to alert on >10 failed auth attempts within 60s across SSH and RDP.",
+    status: "Todo", priority: "High", category: "Monitoring",
+    assignee: "Dev Ops", dueDate: "2026-04-30",
+    tags: ["SIEM", "Elastic", "Brute Force"],
+    checklist: [
+      { id: 1, text: "Define detection threshold", done: false },
+      { id: 2, text: "Write Elastic rule", done: false },
+      { id: 3, text: "Test with simulated attack", done: false },
+      { id: 4, text: "Configure alert routing", done: false },
+    ],
+    createdAt: "2026-04-02"
+  },
+];
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function priorityClass(p) {
+  if (p === "Critical") return "badge-critical";
+  if (p === "High")     return "badge-high";
+  if (p === "Medium")   return "badge-medium";
+  return "badge-low";
+}
+function statusClass(s) {
+  if (s === "Todo")        return "status-todo";
+  if (s === "In Progress") return "status-inprogress";
+  if (s === "Review")      return "status-review";
+  if (s === "Blocked")     return "status-blocked";
+  if (s === "Done")        return "status-done";
+  return "status-todo";
+}
+function categoryColor(c) {
+  return CATEGORY_COLORS[c] || "text-slate-400";
+}
+function initials(name) {
+  return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+}
+
+// ── TopNav ─────────────────────────────────────────────────────────────────
+function TopNav({ activeTab, setActiveTab, onNew, settings }) {
+  const tabs = ["Dashboard", "Backlog", "Board", "Incidents", "Vulnerabilities", "Settings"];
+  return (
+    <nav className="flex items-center gap-0 px-4 border-b border-slate-800 bg-slate-900 h-12 select-none flex-shrink-0">
+      <div className="flex items-center gap-1.5 mr-6">
+        <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: settings.accentColor }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="1" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+            <rect x="8" y="1" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+            <rect x="1" y="8" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+            <rect x="8" y="8" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+          </svg>
+        </div>
+        <span className="font-bold text-white text-sm tracking-tight">{settings.appName.slice(0, -5) || "Ops"}<span style={{ color: settings.accentColor }}>{settings.appName.slice(-5) || "Board"}</span></span>
+        {settings.domain && (
+          <span className="ml-2 text-xs text-slate-500 font-mono bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">{settings.domain}</span>
+        )}
+      </div>
+      <div className="w-px h-5 bg-slate-700 mr-4"/>
+      {tabs.map(t => (
+        <button key={t} onClick={() => setActiveTab(t)}
+          className={`h-12 px-3 text-sm font-medium transition-colors border-b-2 ${activeTab === t ? "border-indigo-500 text-indigo-400" : "border-transparent text-slate-400 hover:text-slate-200"}`}
+          style={activeTab === t ? { borderColor: settings.accentColor, color: settings.accentColor } : {}}>
+          {t}
+        </button>
+      ))}
+      <div className="flex-1"/>
+      {activeTab !== "Settings" && (
+        <button onClick={onNew}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-white text-sm font-medium transition-colors mr-4 hover:opacity-90"
+          style={{ background: settings.accentColor }}>
+          <span className="text-lg leading-none">+</span> New Task
+        </button>
+      )}
+      <div className="flex items-center gap-2 text-sm text-slate-300">
+        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
+          style={{ background: settings.accentColor + "cc" }}>
+          {settings.initials}
+        </div>
+        {settings.userName}
+      </div>
+    </nav>
+  );
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function Dashboard({ tasks, settings }) {
+  const stats = [
+    { label: "Open Tasks",  value: tasks.filter(t => t.status !== "Done").length,                          color: "text-indigo-400", bg: "bg-indigo-950" },
+    { label: "Critical",    value: tasks.filter(t => t.priority === "Critical" && t.status !== "Done").length, color: "text-red-400",    bg: "bg-red-950"    },
+    { label: "Blocked",     value: tasks.filter(t => t.status === "Blocked").length,                        color: "text-orange-400", bg: "bg-orange-950" },
+    { label: "Done",        value: tasks.filter(t => t.status === "Done").length,                           color: "text-emerald-400",bg: "bg-emerald-950"},
+  ];
+  const byStatus = STATUSES.map(s => ({ status: s, count: tasks.filter(t => t.status === s).length }));
+  const recent   = [...tasks].sort((a, b) => b.id - a.id).slice(0, 5);
+  return (
+    <div className="p-6 fade-in">
+      <h2 className="text-white font-semibold text-lg mb-4">Dashboard</h2>
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        {stats.map(s => (
+          <div key={s.label} className={`${s.bg} border border-slate-800 rounded-lg p-4`}>
+            <div className={`text-3xl font-bold ${s.color}`}>{s.value}</div>
+            <div className="text-slate-400 text-sm mt-1">{s.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-6">
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+          <h3 className="text-slate-300 font-medium text-sm mb-3">Status Breakdown</h3>
+          {byStatus.map(({ status, count }) => (
+            <div key={status} className="flex items-center gap-3 mb-2">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusClass(status)}`}>{status}</span>
+              <div className="flex-1 bg-slate-800 rounded-full h-1.5">
+                <div className="h-1.5 rounded-full transition-all" style={{ width: tasks.length ? `${(count/tasks.length)*100}%` : "0%", background: settings.accentColor }}/>
+              </div>
+              <span className="text-slate-400 text-xs w-4 text-right">{count}</span>
+            </div>
+          ))}
+        </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
+          <h3 className="text-slate-300 font-medium text-sm mb-3">Recent Tasks</h3>
+          {recent.map(t => (
+            <div key={t.id} className="flex items-start gap-2 mb-2.5">
+              <span className={`mt-0.5 text-xs px-1.5 py-0.5 rounded font-medium ${statusClass(t.status)}`}>{t.status}</span>
+              <span className="text-slate-300 text-sm truncate flex-1">{t.title}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-6 bg-slate-900 border border-slate-800 rounded-lg p-4">
+        <h3 className="text-slate-300 font-medium text-sm mb-3">Tasks by Category</h3>
+        <div className="flex flex-wrap gap-3">
+          {settings.categories.map(cat => {
+            const count = tasks.filter(t => t.category === cat).length;
+            if (!count) return null;
+            return (
+              <div key={cat} className="flex items-center gap-2 bg-slate-800 rounded-md px-3 py-2">
+                <span className={`text-xs font-medium ${categoryColor(cat)}`}>{cat}</span>
+                <span className="text-white font-bold text-sm">{count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Backlog ────────────────────────────────────────────────────────────────
+function Backlog({ tasks, onSelect, selectedId, filterCat, setFilterCat, filterStatus, setFilterStatus, settings }) {
+  const allCats = ["All", ...settings.categories];
+  const filtered = tasks.filter(t =>
+    (filterCat === "All" || t.category === filterCat) &&
+    (filterStatus === "All" || t.status === filterStatus)
+  );
+  return (
+    <div className="fade-in flex flex-col h-full">
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-800 bg-slate-900 flex-shrink-0">
+        <span className="text-slate-400 text-sm">Filter:</span>
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
+          className="bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-2 py-1">
+          {allCats.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-2 py-1">
+          <option>All</option>
+          {STATUSES.map(s => <option key={s}>{s}</option>)}
+        </select>
+        <span className="text-slate-500 text-xs ml-auto">{filtered.length} task{filtered.length !== 1 ? "s" : ""}</span>
+      </div>
+      <div className="flex items-center px-6 py-2 text-xs text-slate-500 uppercase tracking-wide border-b border-slate-800 flex-shrink-0">
+        <span className="w-8">#</span>
+        <span className="flex-1">Title</span>
+        <span className="w-28">Category</span>
+        <span className="w-24">Status</span>
+        <span className="w-20">Priority</span>
+        <span className="w-28">Assignee</span>
+        <span className="w-24">Due</span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {filtered.length === 0 && (
+          <div className="text-slate-500 text-sm text-center py-16">No tasks match the current filter.</div>
+        )}
+        {filtered.map(t => (
+          <div key={t.id} onClick={() => onSelect(t.id)}
+            className={`task-row flex items-center px-6 py-3 cursor-pointer border-b border-slate-800 transition-colors ${selectedId === t.id ? "bg-slate-800" : ""}`}>
+            <span className="w-8 text-slate-500 text-xs">{t.id}</span>
+            <span className="flex-1 text-slate-200 text-sm font-medium truncate pr-4">{t.title}</span>
+            <span className={`w-28 text-xs font-medium ${categoryColor(t.category)}`}>{t.category}</span>
+            <span className="w-24"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusClass(t.status)}`}>{t.status}</span></span>
+            <span className="w-20"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityClass(t.priority)}`}>{t.priority}</span></span>
+            <span className="w-28 text-slate-400 text-xs">{t.assignee}</span>
+            <span className="w-24 text-slate-400 text-xs">{t.dueDate || "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Board ──────────────────────────────────────────────────────────────────
+function Board({ tasks, onSelect, settings }) {
+  return (
+    <div className="fade-in flex gap-3 p-4 overflow-x-auto h-full">
+      {STATUSES.map(col => {
+        const colTasks = tasks.filter(t => t.status === col);
+        return (
+          <div key={col} className="kanban-col flex-shrink-0 w-60 bg-slate-900 rounded-lg border border-slate-800 flex flex-col">
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-800">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusClass(col)}`}>{col}</span>
+              <span className="text-slate-500 text-xs">{colTasks.length}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+              {colTasks.map(t => (
+                <div key={t.id} onClick={() => onSelect(t.id)}
+                  className="bg-slate-800 border border-slate-700 rounded-md p-3 cursor-pointer transition-colors hover:border-indigo-600">
+                  <div className="text-slate-200 text-xs font-medium leading-snug mb-2">{t.title}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${priorityClass(t.priority)}`}>{t.priority}</span>
+                    <span className={`text-xs font-medium ${categoryColor(t.category)}`}>{t.category}</span>
+                  </div>
+                  {t.checklist.length > 0 && (
+                    <div className="mt-2 text-xs text-slate-500">
+                      {t.checklist.filter(c => c.done).length}/{t.checklist.length} checks
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Incidents ──────────────────────────────────────────────────────────────
+function Incidents({ tasks, onSelect, selectedId }) {
+  const incidents = tasks.filter(t => t.category === "Incident");
+  return (
+    <div className="fade-in p-6">
+      <h2 className="text-white font-semibold text-lg mb-4">Incidents</h2>
+      {incidents.length === 0 && <div className="text-slate-500 text-sm">No incidents logged.</div>}
+      <div className="flex flex-col gap-3">
+        {incidents.map(t => (
+          <div key={t.id} onClick={() => onSelect(t.id)}
+            className={`border rounded-lg p-4 cursor-pointer transition-colors ${selectedId === t.id ? "border-indigo-600 bg-slate-800" : "border-slate-800 bg-slate-900 hover:border-slate-600"}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="text-slate-200 font-medium text-sm mb-1">{t.title}</div>
+                <div className="text-slate-400 text-xs line-clamp-2">{t.description}</div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusClass(t.status)}`}>{t.status}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityClass(t.priority)}`}>{t.priority}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-3 text-xs text-slate-500">
+              <span>{t.assignee}</span><span>·</span><span>{t.dueDate}</span>
+              <span>·</span><span>{t.checklist.filter(c => c.done).length}/{t.checklist.length} resolved</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Vulnerabilities ────────────────────────────────────────────────────────
+function Vulnerabilities({ tasks, onSelect, selectedId }) {
+  const vulns = tasks.filter(t => t.category === "Vulnerability");
+  return (
+    <div className="fade-in p-6">
+      <h2 className="text-white font-semibold text-lg mb-4">Vulnerabilities</h2>
+      {vulns.length === 0 && <div className="text-slate-500 text-sm">No vulnerabilities tracked.</div>}
+      <div className="flex flex-col gap-3">
+        {vulns.map(t => (
+          <div key={t.id} onClick={() => onSelect(t.id)}
+            className={`border rounded-lg p-4 cursor-pointer transition-colors ${selectedId === t.id ? "border-indigo-600 bg-slate-800" : "border-slate-800 bg-slate-900 hover:border-slate-600"}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityClass(t.priority)}`}>{t.priority}</span>
+                  {t.tags.map(tag => (
+                    <span key={tag} className="text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">{tag}</span>
+                  ))}
+                </div>
+                <div className="text-slate-200 font-medium text-sm">{t.title}</div>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${statusClass(t.status)}`}>{t.status}</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-500 flex items-center gap-3">
+              <span>Assignee: {t.assignee}</span><span>·</span><span>Due: {t.dueDate}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────
+function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClearTasks }) {
+  const [draft, setDraft]       = useState({ ...settings });
+  const [newAssignee, setNewAssignee]   = useState("");
+  const [newCategory, setNewCategory]   = useState("");
+  const [saved, setSaved]       = useState(false);
+  const [activeSection, setActiveSection] = useState("General");
+  const [confirm, setConfirm]   = useState(null); // { title, message, onConfirm }
+  const fileRef = useRef();
+
+  const update = (key, val) => setDraft(d => ({ ...d, [key]: val }));
+
+  const addAssignee = () => {
+    const v = newAssignee.trim();
+    if (!v || draft.assignees.includes(v)) return;
+    update("assignees", [...draft.assignees, v]);
+    setNewAssignee("");
+  };
+  const removeAssignee = (a) => update("assignees", draft.assignees.filter(x => x !== a));
+
+  const addCategory = () => {
+    const v = newCategory.trim();
+    if (!v || draft.categories.includes(v)) return;
+    update("categories", [...draft.categories, v]);
+    setNewCategory("");
+  };
+  const removeCategory = (c) => update("categories", draft.categories.filter(x => x !== c));
+
+  const handleSave = () => {
+    onSave(draft);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify({ tasks, settings }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "opsboard-backup.json";
+    a.click();
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (data.tasks) onImportTasks(data.tasks);
+        if (data.settings) onSave(data.settings);
+        alert("Import successful.");
+      } catch { alert("Invalid file format."); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const sections = ["General", "Team", "Categories", "Data"];
+
+  return (
+    <div className="fade-in flex h-full">
+      {/* Left nav */}
+      <div className="w-48 bg-slate-900 border-r border-slate-800 p-4 flex-shrink-0">
+        <div className="text-xs text-slate-500 uppercase tracking-wide mb-3">Settings</div>
+        {sections.map(s => (
+          <button key={s} onClick={() => setActiveSection(s)}
+            className={`w-full text-left px-3 py-2 rounded-md text-sm mb-1 transition-colors ${activeSection === s ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}>
+            {s}
+          </button>
+        ))}
+        <div className="mt-4 pt-4 border-t border-slate-800">
+          <button onClick={handleSave}
+            className={`w-full py-2 rounded-md text-sm font-semibold transition-colors ${saved ? "bg-emerald-600 text-white" : "text-white"}`}
+            style={saved ? {} : { background: settings.accentColor }}>
+            {saved ? "Saved" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+
+        {/* ── General ── */}
+        {activeSection === "General" && (
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">General</h2>
+            <p className="text-slate-400 text-sm mb-5">App name, branding, and your profile.</p>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-4">Application</h3>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">App Name</label>
+                <input value={draft.appName} onChange={e => update("appName", e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+              </div>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Custom Domain</label>
+                <div className="flex items-center bg-slate-800 border border-slate-700 rounded-md overflow-hidden focus-within:border-indigo-500 transition-colors">
+                  <span className="pl-3 text-slate-500 text-sm select-none">https://</span>
+                  <input value={draft.domain} onChange={e => update("domain", e.target.value.replace(/^https?:\/\//, ""))}
+                    className="flex-1 bg-transparent text-white text-sm px-1 py-2 font-mono"
+                    placeholder="opsboard.yourdomain.com"/>
+                </div>
+                <p className="text-slate-600 text-xs mt-1">Displayed in the nav bar for reference.</p>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-2 block">Accent Colour</label>
+                <div className="flex items-center gap-3">
+                  <input type="color" value={draft.accentColor} onChange={e => update("accentColor", e.target.value)}
+                    className="w-10 h-10 rounded-md cursor-pointer border-0 bg-transparent"/>
+                  <div className="flex gap-2">
+                    {["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#22c55e","#06b6d4","#3b82f6"].map(c => (
+                      <button key={c} onClick={() => update("accentColor", c)}
+                        className={`w-6 h-6 rounded-full border-2 transition-all ${draft.accentColor === c ? "border-white scale-110" : "border-transparent"}`}
+                        style={{ background: c }}/>
+                    ))}
+                  </div>
+                  <span className="text-slate-400 text-xs font-mono">{draft.accentColor}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-4">Profile</h3>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Display Name</label>
+                  <input value={draft.userName} onChange={e => update("userName", e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+                </div>
+                <div className="w-28">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Initials</label>
+                  <input value={draft.initials} onChange={e => update("initials", e.target.value.toUpperCase().slice(0,3))}
+                    maxLength={3}
+                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors text-center font-bold tracking-widest"/>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                  style={{ background: draft.accentColor + "cc" }}>
+                  {draft.initials || "?"}
+                </div>
+                <span className="text-slate-300 text-sm">{draft.userName || "Your name"}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Team ── */}
+        {activeSection === "Team" && (
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Team</h2>
+            <p className="text-slate-400 text-sm mb-5">Manage the assignees available on all tasks.</p>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-3">Assignees</h3>
+              <div className="flex flex-col gap-2 mb-3">
+                {draft.assignees.map(a => (
+                  <div key={a} className="flex items-center justify-between bg-slate-800 rounded-md px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-slate-600 flex items-center justify-center text-xs text-white font-bold">
+                        {initials(a)}
+                      </div>
+                      <span className="text-slate-200 text-sm">{a}</span>
+                    </div>
+                    <button onClick={() => removeAssignee(a)}
+                      className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input value={newAssignee} onChange={e => setNewAssignee(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addAssignee()}
+                  placeholder="Add assignee name…"
+                  className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+                <button onClick={addAssignee}
+                  className="px-4 py-2 rounded-md text-white text-sm font-medium transition-colors hover:opacity-90"
+                  style={{ background: draft.accentColor }}>Add</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Categories ── */}
+        {activeSection === "Categories" && (
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Categories</h2>
+            <p className="text-slate-400 text-sm mb-5">Task categories appear in filters, task detail, and the dashboard.</p>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-3">Categories</h3>
+              <div className="flex flex-col gap-2 mb-3">
+                {draft.categories.map(c => (
+                  <div key={c} className="flex items-center justify-between bg-slate-800 rounded-md px-3 py-2">
+                    <span className={`text-sm font-medium ${categoryColor(c)}`}>{c}</span>
+                    <button onClick={() => removeCategory(c)}
+                      className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input value={newCategory} onChange={e => setNewCategory(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addCategory()}
+                  placeholder="New category name…"
+                  className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+                <button onClick={addCategory}
+                  className="px-4 py-2 rounded-md text-white text-sm font-medium transition-colors hover:opacity-90"
+                  style={{ background: draft.accentColor }}>Add</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Data ── */}
+        {activeSection === "Data" && (
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Data Management</h2>
+            <p className="text-slate-400 text-sm mb-5">Export, import, or reset your board data.</p>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Export</h3>
+              <p className="text-slate-500 text-xs mb-3">Download all tasks and settings as a JSON file you can re-import later.</p>
+              <button onClick={handleExport}
+                className="px-4 py-2 rounded-md text-white text-sm font-medium transition-colors hover:opacity-90"
+                style={{ background: draft.accentColor }}>
+                Export Backup (JSON)
+              </button>
+            </div>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Import</h3>
+              <p className="text-slate-500 text-xs mb-3">Restore from a previously exported JSON backup. This will overwrite current data.</p>
+              <input ref={fileRef} type="file" accept=".json" onChange={handleImport} className="hidden"/>
+              <button onClick={() => fileRef.current.click()}
+                className="px-4 py-2 rounded-md text-slate-200 text-sm font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors">
+                Import from JSON
+              </button>
+            </div>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Reset to Defaults</h3>
+              <p className="text-slate-500 text-xs mb-3">Wipe all current tasks and reload the original seed data. Settings are preserved.</p>
+              <button onClick={() => setConfirm({ title: "Reset to defaults?", message: "All current tasks will be replaced with the original seed data. This cannot be undone.", confirmLabel: "Reset", onConfirm: () => { onResetTasks(); setConfirm(null); } })}
+                className="px-4 py-2 rounded-md text-orange-300 text-sm font-medium bg-orange-950 hover:bg-orange-900 border border-orange-900 transition-colors">
+                Reset Tasks to Defaults
+              </button>
+            </div>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Clear All Tasks</h3>
+              <p className="text-slate-500 text-xs mb-3">Permanently delete every task. This cannot be undone.</p>
+              <button onClick={() => setConfirm({ title: "Clear all tasks?", message: "Every task will be permanently deleted. This cannot be undone.", confirmLabel: "Delete All", onConfirm: () => { onClearTasks(); setConfirm(null); } })}
+                className="px-4 py-2 rounded-md text-red-400 text-sm font-medium bg-red-950 hover:bg-red-900 border border-red-900 transition-colors">
+                Clear All Tasks
+              </button>
+            </div>
+
+            <div className="settings-section">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Storage Info</h3>
+              <p className="text-slate-500 text-xs mb-2">Data is stored in your browser's localStorage and persists across sessions.</p>
+              <div className="flex gap-4 text-xs">
+                <div className="bg-slate-800 rounded px-3 py-2">
+                  <div className="text-white font-bold">{tasks.length}</div>
+                  <div className="text-slate-400">Tasks stored</div>
+                </div>
+                <div className="bg-slate-800 rounded px-3 py-2">
+                  <div className="text-white font-bold">{(JSON.stringify({ tasks, settings }).length / 1024).toFixed(1)} KB</div>
+                  <div className="text-slate-400">Approx. size</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      {confirm && (
+        <ConfirmModal
+          title={confirm.title}
+          message={confirm.message}
+          confirmLabel={confirm.confirmLabel}
+          danger={true}
+          accentColor={draft.accentColor}
+          onConfirm={confirm.onConfirm}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Confirm Modal ──────────────────────────────────────────────────────────
+function ConfirmModal({ title, message, confirmLabel = "Confirm", danger = false, onConfirm, onCancel, accentColor }) {
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 fade-in"
+      onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-6 shadow-2xl">
+        <h3 className="text-white font-semibold text-base mb-2">{title}</h3>
+        <p className="text-slate-400 text-sm mb-6">{message}</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel}
+            className="flex-1 py-2 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors border border-slate-700">
+            Cancel
+          </button>
+          <button onClick={onConfirm}
+            className={`flex-1 py-2 rounded-md text-sm font-semibold transition-colors ${danger ? "bg-red-700 hover:bg-red-600 text-white" : "text-white hover:opacity-90"}`}
+            style={danger ? {} : { background: accentColor }}>
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── Detail Panel ───────────────────────────────────────────────────────────
+function DetailPanel({ task, onUpdate, onDelete, onClose, settings }) {
+  const [title, setTitle]           = useState(task.title);
+  const [description, setDescription] = useState(task.description);
+  const [status, setStatus]         = useState(task.status);
+  const [priority, setPriority]     = useState(task.priority);
+  const [category, setCategory]     = useState(task.category);
+  const [assignee, setAssignee]     = useState(task.assignee);
+  const [dueDate, setDueDate]       = useState(task.dueDate);
+  const [checklist, setChecklist]   = useState(task.checklist);
+  const [newCheck, setNewCheck]     = useState("");
+  const [saved, setSaved]           = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    setTitle(task.title); setDescription(task.description);
+    setStatus(task.status); setPriority(task.priority);
+    setCategory(task.category); setAssignee(task.assignee);
+    setDueDate(task.dueDate); setChecklist(task.checklist);
+  }, [task.id]);
+
+  const handleSave = () => {
+    onUpdate({ ...task, title, description, status, priority, category, assignee, dueDate, checklist });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+  const toggleCheck  = (id) => setChecklist(cl => cl.map(c => c.id === id ? { ...c, done: !c.done } : c));
+  const addCheck     = () => {
+    if (!newCheck.trim()) return;
+    setChecklist(cl => [...cl, { id: Date.now(), text: newCheck.trim(), done: false }]);
+    setNewCheck("");
+  };
+  const removeCheck  = (id) => setChecklist(cl => cl.filter(c => c.id !== id));
+  const done = checklist.filter(c => c.done).length;
+
+  return (
+    <div className="w-80 flex-shrink-0 bg-slate-900 border-l border-slate-800 flex flex-col overflow-y-auto fade-in">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
+        <span className="text-slate-300 text-sm font-medium">Task Detail</span>
+        <button onClick={onClose} className="text-slate-500 hover:text-slate-300 text-lg leading-none">×</button>
+      </div>
+
+      <div className="px-4 pt-4 pb-2">
+        <input value={title} onChange={e => setTitle(e.target.value)}
+          className="w-full bg-transparent border-b border-slate-700 text-white text-sm font-semibold pb-1 focus:border-indigo-500 transition-colors"
+          placeholder="Task title"/>
+      </div>
+
+      <div className="px-4 py-2">
+        <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Description</label>
+        <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5}
+          className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-md p-2 resize-none focus:border-indigo-500 transition-colors"
+          placeholder="Task description…"/>
+      </div>
+
+      <div className="px-4 py-2">
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-slate-500 uppercase tracking-wide">Checklist</label>
+          {checklist.length > 0 && <span className="text-xs text-slate-500">{done}/{checklist.length}</span>}
+        </div>
+        {checklist.length > 0 && (
+          <div className="mb-1 bg-slate-800 rounded-full h-1">
+            <div className="h-1 rounded-full transition-all" style={{ width: `${(done/checklist.length)*100}%`, background: settings.accentColor }}/>
+          </div>
+        )}
+        <div className="flex flex-col gap-1 mt-2">
+          {checklist.map(c => (
+            <div key={c.id} className="flex items-center gap-2 group">
+              <input type="checkbox" checked={c.done} onChange={() => toggleCheck(c.id)} className="flex-shrink-0" style={{ accentColor: settings.accentColor }}/>
+              <span className={`text-xs flex-1 ${c.done ? "line-through text-slate-500" : "text-slate-300"}`}>{c.text}</span>
+              <button onClick={() => removeCheck(c.id)}
+                className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 text-xs transition-all">×</button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-1 mt-2">
+          <input value={newCheck} onChange={e => setNewCheck(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addCheck()}
+            className="flex-1 bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded px-2 py-1 focus:border-indigo-500 transition-colors"
+            placeholder="Add checklist item…"/>
+          <button onClick={addCheck}
+            className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded transition-colors">+</button>
+        </div>
+      </div>
+
+      <div className="px-4 py-2">
+        <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Tags</label>
+        <div className="flex flex-wrap gap-1">
+          {task.tags.map(tag => (
+            <span key={tag} className="text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">{tag}</span>
+          ))}
+          {task.tags.length === 0 && <span className="text-slate-600 text-xs">None</span>}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-800 mx-4 my-2"/>
+
+      <div className="px-4 flex flex-col gap-2">
+        <button onClick={handleSave}
+          className={`w-full py-2 rounded-md text-sm font-semibold transition-colors ${saved ? "bg-emerald-600 text-white" : "text-white hover:opacity-90"}`}
+          style={saved ? {} : { background: settings.accentColor }}>
+          {saved ? "Saved" : "Save"}
+        </button>
+        {status !== "Done" && (
+          <button onClick={() => { setStatus("Done"); onUpdate({ ...task, title, description, status: "Done", priority, category, assignee, dueDate, checklist }); }}
+            className="w-full py-2 rounded-md text-sm font-medium bg-emerald-900 hover:bg-emerald-800 text-emerald-300 border border-emerald-800 transition-colors">
+            Mark as Done
+          </button>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => setConfirmDelete(true)}
+            className="py-2 rounded-md text-xs font-medium bg-red-950 hover:bg-red-900 text-red-400 border border-red-900 transition-colors">
+            Delete
+          </button>
+          <button onClick={onClose}
+            className="py-2 rounded-md text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-800 mx-4 my-3"/>
+
+      <div className="px-4 flex flex-col gap-3 pb-6">
+        {[
+          { label: "Status",   value: status,   set: setStatus,   opts: STATUSES },
+          { label: "Priority", value: priority, set: setPriority, opts: PRIORITIES },
+          { label: "Category", value: category, set: setCategory, opts: settings.categories },
+          { label: "Assignee", value: assignee, set: setAssignee, opts: settings.assignees },
+        ].map(({ label, value, set, opts }) => (
+          <div key={label}>
+            <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">{label}</label>
+            <select value={value} onChange={e => set(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-2 py-1.5 focus:border-indigo-500 transition-colors">
+              {opts.map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
+        ))}
+        <div>
+          <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Due Date</label>
+          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-2 py-1.5 focus:border-indigo-500 transition-colors"/>
+        </div>
+        <div className="text-xs text-slate-600 mt-1">Created: {task.createdAt}</div>
+      </div>
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete task?"
+          message={`"${task.title}" will be permanently removed.`}
+          confirmLabel="Delete"
+          danger={true}
+          accentColor={settings.accentColor}
+          onConfirm={() => { setConfirmDelete(false); onDelete(task.id); }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── New Task Modal ─────────────────────────────────────────────────────────
+function NewTaskModal({ onAdd, onClose, settings }) {
+  const [title, setTitle]           = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus]         = useState("Todo");
+  const [priority, setPriority]     = useState("Medium");
+  const [category, setCategory]     = useState(settings.categories[0] || "");
+  const [assignee, setAssignee]     = useState(settings.assignees[0] || "");
+  const [dueDate, setDueDate]       = useState("");
+
+  const handleAdd = () => {
+    if (!title.trim()) return;
+    onAdd({ title: title.trim(), description, status, priority, category, assignee, dueDate, tags: [], checklist: [] });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-6 fade-in shadow-2xl">
+        <h3 className="text-white font-semibold mb-4">New Task</h3>
+        <div className="flex flex-col gap-3">
+          <input value={title} onChange={e => setTitle(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"
+            placeholder="Task title *" autoFocus/>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+            className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-3 py-2 resize-none focus:border-indigo-500 transition-colors"
+            placeholder="Description (optional)"/>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: "Status",   value: status,   set: setStatus,   opts: STATUSES },
+              { label: "Priority", value: priority, set: setPriority, opts: PRIORITIES },
+              { label: "Category", value: category, set: setCategory, opts: settings.categories },
+              { label: "Assignee", value: assignee, set: setAssignee, opts: settings.assignees },
+            ].map(({ label, value, set, opts }) => (
+              <div key={label}>
+                <label className="text-xs text-slate-500 mb-1 block">{label}</label>
+                <select value={value} onChange={e => set(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-2 py-1.5 focus:border-indigo-500 transition-colors">
+                  {opts.map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Due Date</label>
+            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-2 py-1.5 focus:border-indigo-500 transition-colors"/>
+          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={handleAdd}
+            className="flex-1 py-2 rounded-md text-white text-sm font-medium transition-colors hover:opacity-90"
+            style={{ background: settings.accentColor }}>
+            Create Task
+          </button>
+          <button onClick={onClose}
+            className="flex-1 py-2 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors border border-slate-700">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── App Root ───────────────────────────────────────────────────────────────
+function App() {
+  const [tasks, setTasks] = useState(() => {
+    try { const s = localStorage.getItem("opsboard_tasks"); return s ? JSON.parse(s) : SEED_TASKS; }
+    catch { return SEED_TASKS; }
+  });
+  const [settings, setSettings] = useState(() => {
+    try { const s = localStorage.getItem("opsboard_settings"); return s ? { ...DEFAULT_SETTINGS, ...JSON.parse(s) } : DEFAULT_SETTINGS; }
+    catch { return DEFAULT_SETTINGS; }
+  });
+
+  const [activeTab, setActiveTab]   = useState("Dashboard");
+  const [selectedId, setSelectedId] = useState(null);
+  const [filterCat, setFilterCat]   = useState("All");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [showNew, setShowNew]       = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem("opsboard_tasks", JSON.stringify(tasks)); } catch {}
+  }, [tasks]);
+
+  useEffect(() => {
+    try { localStorage.setItem("opsboard_settings", JSON.stringify(settings)); } catch {}
+    document.title = settings.appName || "OpsBoard";
+  }, [settings]);
+
+  const selectedTask = tasks.find(t => t.id === selectedId) || null;
+
+  const handleSelect    = (id) => setSelectedId(prev => prev === id ? null : id);
+  const handleUpdate    = (u)  => setTasks(ts => ts.map(t => t.id === u.id ? u : t));
+  const handleDelete    = (id) => { setTasks(ts => ts.filter(t => t.id !== id)); setSelectedId(null); };
+  const handleAdd       = (nt) => {
+    const id = Math.max(...tasks.map(t => t.id), 0) + 1;
+    setTasks(ts => [{ ...nt, id, createdAt: new Date().toISOString().slice(0,10) }, ...ts]);
+  };
+  const handleSaveSettings = (s) => setSettings({ ...DEFAULT_SETTINGS, ...s });
+  const handleImportTasks  = (t) => { setTasks(t); setSelectedId(null); };
+  const handleResetTasks   = ()  => { setTasks(SEED_TASKS); setSelectedId(null); };
+  const handleClearTasks   = ()  => { setTasks([]); setSelectedId(null); };
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
+      <TopNav activeTab={activeTab} setActiveTab={(t) => { setActiveTab(t); setSelectedId(null); }} onNew={() => setShowNew(true)} settings={settings}/>
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === "Dashboard"      && <Dashboard tasks={tasks} settings={settings}/>}
+          {activeTab === "Backlog"        && (
+            <Backlog tasks={tasks} onSelect={handleSelect} selectedId={selectedId}
+              filterCat={filterCat} setFilterCat={setFilterCat}
+              filterStatus={filterStatus} setFilterStatus={setFilterStatus}
+              settings={settings}/>
+          )}
+          {activeTab === "Board"          && <Board tasks={tasks} onSelect={handleSelect} settings={settings}/>}
+          {activeTab === "Incidents"      && <Incidents tasks={tasks} onSelect={handleSelect} selectedId={selectedId}/>}
+          {activeTab === "Vulnerabilities"&& <Vulnerabilities tasks={tasks} onSelect={handleSelect} selectedId={selectedId}/>}
+          {activeTab === "Settings"       && (
+            <Settings settings={settings} onSave={handleSaveSettings} tasks={tasks}
+              onImportTasks={handleImportTasks} onResetTasks={handleResetTasks} onClearTasks={handleClearTasks}/>
+          )}
+        </div>
+        {selectedTask && activeTab !== "Settings" && (
+          <DetailPanel task={selectedTask} onUpdate={handleUpdate} onDelete={handleDelete}
+            onClose={() => setSelectedId(null)} settings={settings}/>
+        )}
+      </div>
+      {showNew && <NewTaskModal onAdd={handleAdd} onClose={() => setShowNew(false)} settings={settings}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
