@@ -1645,6 +1645,123 @@ function StorageBadge({ mode }) {
   );
 }
 
+
+// ── Tutorial Overlay ───────────────────────────────────────────────────────
+function Tutorial({ onComplete, accentColor, userName }) {
+  const [step, setStep] = useState(0);
+
+  const steps = [
+    {
+      icon: (
+        <svg width="32" height="32" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+          <rect x="8" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+          <rect x="1" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+          <rect x="8" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+        </svg>
+      ),
+      title: `Welcome to OpsBoard${userName ? ", " + userName.split(" ")[0] : ""}!`,
+      body: "OpsBoard is your central hub for managing DevOps and security tasks — incidents, vulnerabilities, deployments, and more — all in one place.",
+      tip: null,
+    },
+    {
+      icon: (
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+        </svg>
+      ),
+      title: "Your workspace, your tabs",
+      body: "Use the tab bar to switch between views. Dashboard gives you an overview, Backlog is your full task list, Board is a Kanban view, and Incidents and Vulnerabilities are filtered views for those categories.",
+      tip: "Tip: keyboard shortcuts — B for Backlog, D for Dashboard, V for Vulnerabilities, I for Incidents, S for Settings.",
+    },
+    {
+      icon: (
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/>
+        </svg>
+      ),
+      title: "Creating your first task",
+      body: "Hit the + button in the top bar (or press N on your keyboard) to create a task. Give it a title, priority, category, due date, and assignee. You can also add checklists and notes inside each task.",
+      tip: "Tip: set categories like Incident, Vulnerability, Deployment, or Security to keep things organised and routed to the right views.",
+    },
+    {
+      icon: (
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7zm4 0h8M8 11h8M8 15h5"/>
+        </svg>
+      ),
+      title: "Your data syncs across devices",
+      body: "Everything you create is saved to the cloud and will appear on any device you sign in to. The sync indicator in the top bar shows when your data is live.",
+      tip: "Tip: go to Settings to set your name, initials, accent colour, and add team members as assignees.",
+    },
+  ];
+
+  const current = steps[step];
+  const isLast  = step === steps.length - 1;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{background:"rgba(10,15,30,0.92)",backdropFilter:"blur(6px)"}}>
+      <div className="w-full max-w-md fade-in"
+        style={{background:"rgba(15,23,42,0.95)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:"1.25rem",boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
+
+        {/* Progress bar */}
+        <div className="flex gap-1.5 p-5 pb-0">
+          {steps.map((_,i)=>(
+            <div key={i} className="flex-1 h-1 rounded-full transition-all duration-500"
+              style={{background: i<=step ? accentColor : "#1e293b"}}/>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="p-7">
+          {/* Icon */}
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+            style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 0 0 1px rgba(99,102,241,.2),0 8px 24px rgba(99,102,241,.2)`}}>
+            {current.icon}
+          </div>
+
+          {/* Step counter */}
+          <p className="text-xs font-medium mb-2" style={{color:accentColor}}>
+            Step {step+1} of {steps.length}
+          </p>
+
+          <h2 className="text-white font-semibold text-xl mb-3 leading-snug">{current.title}</h2>
+          <p className="text-slate-400 text-sm leading-relaxed mb-4">{current.body}</p>
+
+          {current.tip && (
+            <div className="rounded-xl px-4 py-3 text-xs text-slate-400 leading-relaxed"
+              style={{background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.15)"}}>
+              {current.tip}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-7 pb-6 gap-3">
+          <button onClick={onComplete}
+            className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
+            Skip tutorial
+          </button>
+          <div className="flex gap-2">
+            {step > 0 && (
+              <button onClick={()=>setStep(s=>s-1)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700">
+                Back
+              </button>
+            )}
+            <button onClick={()=>isLast ? onComplete() : setStep(s=>s+1)}
+              className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-[.98]"
+              style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 4px 12px ${accentColor}44`}}>
+              {isLast ? "Get started →" : "Next →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 function App() {
   // auth states: "loading" | "unauthenticated" | "authenticated"
@@ -1660,6 +1777,7 @@ function App() {
   const [search,setSearch]         = useState("");
   const [showSearch,setShowSearch] = useState(false);
   const { toasts, toast, dismiss } = useToast();
+  const [showTutorial, setShowTutorial] = useState(false);
 
   // ── Bootstrap ────────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -1723,10 +1841,16 @@ function App() {
   const handleAuth = async u => {
     const t = await StorageService.load("tasks",SEED_TASKS);
     const s = await StorageService.load("settings",DEFAULT_SETTINGS);
-    setTasks(t); setSettings({...DEFAULT_SETTINGS,...s});
+    const mergedSettings = {...DEFAULT_SETTINGS,...s};
+    setTasks(t); setSettings(mergedSettings);
     setStorageMode(StorageService.mode());
     setUser(u); setAuthState("authenticated"); setDataLoaded(true);
-    toast(`Welcome back, ${u.name.split(" ")[0]}!`,"success");
+    // Show tutorial on first login — detected by empty task list and no userName configured
+    if (t.length===0 && !mergedSettings.userName) {
+      setShowTutorial(true);
+    } else {
+      toast(`Welcome back, ${u.name.split(" ")[0]}!`,"success");
+    }
   };
   const handleLogout = () => {
     AuthService.logout();
@@ -1794,6 +1918,7 @@ function App() {
         )}
       </div>
       {showNew&&<NewTaskModal onAdd={add} onClose={()=>setShowNew(false)} settings={settings} toast={toast}/>}
+      {showTutorial&&<Tutorial onComplete={()=>{setShowTutorial(false);toast(`Welcome to OpsBoard!`,"success");}} accentColor={settings.accentColor} userName={user?.name}/>}
       <ToastContainer toasts={toasts} dismiss={dismiss}/>
     </div>
   );
