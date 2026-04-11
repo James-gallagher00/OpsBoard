@@ -9,6 +9,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- MSAL.js — Microsoft Authentication Library for browser-based SSO -->
+  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
   <style>
     *{box-sizing:border-box}
     body{margin:0;background:#0a0f1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e2e8f0}
@@ -76,6 +78,204 @@ const SEED_TASKS = [
   {id:7,title:"Terraform state migration to S3 remote backend",description:"Move all local Terraform state files to S3 with DynamoDB locking. Required before team expansion.",status:"Blocked",priority:"Medium",category:"Infrastructure",assignee:"James G.",dueDate:"2026-04-25",tags:["Terraform","IaC","S3"],checklist:[{id:1,text:"Create S3 bucket + DynamoDB table",done:true},{id:2,text:"Migrate dev workspace",done:false},{id:3,text:"Migrate staging workspace",done:false},{id:4,text:"Migrate prod workspace",done:false}],createdAt:"2026-04-03",notes:"Blocked on AWS permissions approval from infra team."},
   {id:8,title:"Implement SIEM alerting for brute force detection",description:"Configure Elastic SIEM rules to alert on >10 failed auth attempts within 60s across SSH and RDP.",status:"Todo",priority:"High",category:"Monitoring",assignee:"Dev Ops",dueDate:"2026-04-30",tags:["SIEM","Elastic","Brute Force"],checklist:[{id:1,text:"Define detection threshold",done:false},{id:2,text:"Write Elastic rule",done:false},{id:3,text:"Test with simulated attack",done:false},{id:4,text:"Configure alert routing",done:false}],createdAt:"2026-04-02",notes:""},
 ];
+
+// ══════════════════════════════════════════════════════════════════════════
+// ██  AZURE CONFIGURATION  — fill in your values here
+// ══════════════════════════════════════════════════════════════════════════
+const AZURE = {
+  // ▶ EDIT 1 — Your Azure Functions App base URL (no trailing slash)
+  //   Azure Portal → Function App → Overview → URL
+  //   e.g. "https://opsboard-api.azurewebsites.net/api"
+  functionsUrl: "https://opsboardlogic.azurewebsites.net/api",        // ← REPLACE
+
+  // ▶ EDIT 2 — Your Azure Blob Storage account name
+  //   Azure Portal → Storage accounts → your account → name
+  //   e.g. "opsboardstorage"
+  storageAccount: "opsboardstorage",     // ← REPLACE
+
+  // ▶ EDIT 3 — Container name (create manually in your storage account)
+  //   Azure Portal → Storage Account → Containers → + Container → name below
+  storageContainer: "opsboard-data",               // ← change if you name it differently
+
+  // ▶ EDIT 4 — Azure AD App Registration → Overview → Application (client) ID
+  //   Azure Portal → Azure Active Directory → App registrations → your app → Overview
+  //   e.g. "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+  clientId: "ef58aa0d-fa22-46aa-9536-fba4a52a90ff",                  // ← REPLACE
+
+  // ▶ EDIT 5 — Azure AD App Registration → Overview → Directory (tenant) ID
+  //   Same page as above
+  //   e.g. "ffffffff-eeee-dddd-cccc-bbbbbbbbbbbb"
+  tenantId: "f7ffe647-4a1c-4a1f-94da-9c6570990491",                  // ← REPLACE
+};
+
+// Returns true only when required values have been filled in
+const azureConfigured = () =>
+  !AZURE.functionsUrl.includes("YOUR_") && !AZURE.storageAccount.includes("YOUR_");
+const msalConfigured = () =>
+  !AZURE.clientId.includes("YOUR_") && !AZURE.tenantId.includes("YOUR_");
+
+// MSAL instance — created lazily on first Microsoft sign-in attempt
+let _msalInstance = null;
+const getMsal = () => {
+  if (_msalInstance) return _msalInstance;
+  if (!msalConfigured()) return null;
+  _msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: AZURE.clientId,
+      authority: `https://login.microsoftonline.com/${AZURE.tenantId}`,
+      redirectUri: window.location.origin + window.location.pathname,
+    },
+    cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false },
+  });
+  return _msalInstance;
+};
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Storage Service ────────────────────────────────────────────────────────
+// Writes/reads JSON blobs to Azure Blob Storage using a per-user SAS token.
+// Falls back to localStorage automatically if Azure is unreachable or not configured.
+const StorageService = {
+  _sasToken: null,
+  _userId:   null,
+  _mode:     "local", // "azure" | "local" | "memory"
+
+  init(userId, sasToken) {
+    this._userId   = userId;
+    this._sasToken = sasToken;
+    this._mode     = (userId && sasToken && azureConfigured()) ? "azure" : "local";
+  },
+
+  _url(key) {
+    // Blob path: {container}/{userId}/{key}.json?{sasToken}
+    return `https://${AZURE.storageAccount}.blob.core.windows.net/${AZURE.storageContainer}/${this._userId}/${key}.json?${this._sasToken}`;
+  },
+
+  async save(key, data) {
+    if (this._mode === "azure") {
+      try {
+        const res = await fetch(this._url(key), {
+          method: "PUT",
+          headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) return "azure";
+        throw new Error(res.statusText);
+      } catch (e) {
+        console.warn("Azure Blob write failed, falling back to localStorage:", e.message);
+        this._mode = "local";
+      }
+    }
+    try { localStorage.setItem(`opsboard_${key}`, JSON.stringify(data)); return "local"; }
+    catch { return "memory"; }
+  },
+
+  async load(key, defaultVal) {
+    if (this._mode === "azure") {
+      try {
+        const res = await fetch(this._url(key));
+        if (res.ok) return await res.json();
+        if (res.status !== 404) throw new Error(res.statusText);
+        return defaultVal; // 404 = no data yet, that's fine
+      } catch (e) {
+        console.warn("Azure Blob read failed, falling back to localStorage:", e.message);
+        this._mode = "local";
+      }
+    }
+    try { const s = localStorage.getItem(`opsboard_${key}`); return s ? JSON.parse(s) : defaultVal; }
+    catch { return defaultVal; }
+  },
+
+  mode() { return this._mode; },
+};
+
+// ── Auth Service ───────────────────────────────────────────────────────────
+// Calls your Azure Functions for login/register.
+// ▶ Your Function at /auth/login  must accept:  POST { email, password }
+// ▶ Your Function at /auth/register must accept: POST { email, password, displayName }
+// ▶ Both must return: { token, userId, displayName, sasToken }
+//   where sasToken is a SAS query string for the user's blob directory.
+const AuthService = {
+  _token: null,
+  _user:  null,
+
+  async login(email, password) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Login failed (${res.status})`); }
+    return this._apply(await res.json(), email);
+  },
+
+  async register(email, password, displayName) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, displayName }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Registration failed (${res.status})`); }
+    return this._apply(await res.json(), email);
+  },
+
+  // ── Microsoft SSO ──────────────────────────────────────────────────────
+  // Opens a popup for Azure AD sign-in, then exchanges the ID token with
+  // your Azure Function at POST /auth/microsoft → { token, userId, displayName, sasToken }
+  async msalLogin() {
+    const msal = getMsal();
+    if (!msal) throw new Error("Microsoft SSO not configured. Add clientId and tenantId to AZURE config.");
+    await msal.initialize();
+    const result = await msal.loginPopup({ scopes: ["openid","profile","email"] });
+    const res = await fetch(`${AZURE.functionsUrl}/auth/microsoft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: result.idToken }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Microsoft login failed (${res.status})`); }
+    return this._apply(await res.json(), result.account.username);
+  },
+
+  // ── Forgot password ────────────────────────────────────────────────────
+  // Calls POST /auth/forgot-password → your Function sends a reset email.
+  // Function accepts: { email }  — no response body required beyond 200 OK.
+  async forgotPassword(email) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Request failed (${res.status})`); }
+    return true;
+  },
+
+  _apply(data, email) {
+    this._token = data.token;
+    this._user  = { id: data.userId, name: data.displayName, email };
+    StorageService.init(data.userId, data.sasToken);
+    // Session stored tab-scoped only (expires on browser close)
+    sessionStorage.setItem("opsboard_session", JSON.stringify({ token: data.token, user: this._user, sasToken: data.sasToken }));
+    return this._user;
+  },
+
+  restoreSession() {
+    try {
+      const raw = sessionStorage.getItem("opsboard_session");
+      if (!raw) return null;
+      const { token, user, sasToken } = JSON.parse(raw);
+      this._token = token; this._user = user;
+      StorageService.init(user.id, sasToken);
+      return user;
+    } catch { return null; }
+  },
+
+  logout() {
+    this._token = null; this._user = null;
+    StorageService.init(null, null);
+    sessionStorage.removeItem("opsboard_session");
+  },
+
+  get user() { return this._user; },
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const pc = p => p==="Critical"?"badge-critical":p==="High"?"badge-high":p==="Medium"?"badge-medium":"badge-low";
@@ -153,7 +353,7 @@ function SearchBar({ value, onChange, onClose }) {
 }
 
 // ── TopNav ─────────────────────────────────────────────────────────────────
-function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSearch, showSearch, setShowSearch }) {
+function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSearch, showSearch, setShowSearch, storageMode, user, onLogout }) {
   const tabs = ["Dashboard","Backlog","Board","Incidents","Vulnerabilities","Settings"];
   const badgeCount = tab => {
     if (tab==="Incidents") return tasks.filter(t=>t.category==="Incident"&&t.status!=="Done").length;
@@ -206,11 +406,20 @@ function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSe
           <span className="text-base leading-none">+</span> New Task
         </button>}
       </div>
-      <div className="flex items-center gap-2 text-sm text-slate-300">
-        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ring-2 ring-offset-1 ring-offset-slate-900" style={{background:settings.accentColor+"cc",ringColor:settings.accentColor}}>
-          {settings.initials}
+      <div className="flex items-center gap-2">
+        {storageMode && <StorageBadge mode={storageMode}/>}
+        <div className="flex items-center gap-2 text-sm text-slate-300">
+          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:settings.accentColor+"cc"}}>
+            {settings.initials}
+          </div>
+          <span className="hidden md:inline">{settings.userName}</span>
         </div>
-        <span className="hidden md:inline">{settings.userName}</span>
+        {onLogout && user?.id !== "local" && (
+          <button onClick={onLogout} title="Sign out"
+            className="text-slate-600 hover:text-slate-300 text-xs px-2 py-1 rounded hover:bg-slate-800 transition-colors ml-1">
+            Sign out
+          </button>
+        )}
       </div>
     </nav>
   );
@@ -1043,10 +1252,273 @@ function NewTaskModal({ onAdd, onClose, settings, toast }) {
   );
 }
 
+// ── Login Page ─────────────────────────────────────────────────────────────
+function LoginPage({ onAuth, accentColor }) {
+  // mode: "login" | "register" | "forgot"
+  const [mode,setMode]       = useState("login");
+  const [email,setEmail]     = useState("");
+  const [password,setPass]   = useState("");
+  const [name,setName]       = useState("");
+  const [showPass,setShowP]  = useState(false);
+  const [error,setError]     = useState("");
+  const [info,setInfo]       = useState("");
+  const [loading,setLoad]    = useState(false);
+  const [msalLoading,setML]  = useState(false);
+
+  const switchMode = m => { setMode(m); setError(""); setInfo(""); };
+
+  // ── Email/password submit ────────────────────────────────────────────
+  const submit = async () => {
+    setError(""); setInfo("");
+    if (mode==="forgot") {
+      if (!email) { setError("Enter your email address."); return; }
+      setLoad(true);
+      try {
+        await AuthService.forgotPassword(email);
+        setInfo(`Reset link sent to ${email}. Check your inbox.`);
+        setEmail("");
+      } catch(e) { setError(e.message); }
+      finally { setLoad(false); }
+      return;
+    }
+    if (!email||!password) { setError("Email and password are required."); return; }
+    if (mode==="register"&&!name) { setError("Display name is required."); return; }
+    if (mode==="register"&&password.length<8) { setError("Password must be at least 8 characters."); return; }
+    setLoad(true);
+    try {
+      const user = mode==="login"
+        ? await AuthService.login(email,password)
+        : await AuthService.register(email,password,name);
+      onAuth(user);
+    } catch(e) { setError(e.message); }
+    finally { setLoad(false); }
+  };
+
+  // ── Microsoft SSO ────────────────────────────────────────────────────
+  const msalSignIn = async () => {
+    setML(true); setError("");
+    try {
+      const user = await AuthService.msalLogin();
+      onAuth(user);
+    } catch(e) { setError(e.message); }
+    finally { setML(false); }
+  };
+
+  // Password strength (register only)
+  const strength = password.length===0?0:password.length<6?1:password.length<10?2:/[^a-zA-Z0-9]/.test(password)&&password.length>=10?4:3;
+  const strengthLabel = ["","Weak","Fair","Good","Strong"][strength];
+  const strengthColor = ["","#ef4444","#f97316","#eab308","#22c55e"][strength];
+
+  const inputCls = "w-full bg-slate-800/80 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 focus:border-indigo-500 transition-colors placeholder-slate-500";
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{background:"#0a0f1e"}}>
+      {/* Background decoration */}
+      <div style={{position:"fixed",inset:0,backgroundImage:"linear-gradient(rgba(99,102,241,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.03) 1px,transparent 1px)",backgroundSize:"48px 48px",pointerEvents:"none"}}/>
+      <div style={{position:"fixed",top:"-20%",left:"50%",transform:"translateX(-50%)",width:"600px",height:"400px",background:"radial-gradient(ellipse,rgba(99,102,241,.1) 0%,transparent 70%)",pointerEvents:"none"}}/>
+
+      <div className="w-full max-w-sm relative z-10 fade-in">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+            style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 0 0 1px rgba(99,102,241,.3),0 8px 32px rgba(99,102,241,.15)`}}>
+            <svg width="28" height="28" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+              <rect x="8" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+              <rect x="1" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+              <rect x="8" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Ops<span style={{color:accentColor}}>Board</span></h1>
+          <p className="text-slate-500 text-sm mt-1">DevOps &amp; Security task management</p>
+        </div>
+
+        {/* Card */}
+        <div className="rounded-2xl p-7" style={{background:"rgba(15,23,42,.8)",backdropFilter:"blur(16px)",border:"1px solid rgba(99,102,241,.18)",boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}>
+
+          {/* Mode toggle — only for login/register */}
+          {mode!=="forgot" && (
+            <div className="flex bg-slate-800/80 rounded-xl p-1 mb-6">
+              {["login","register"].map(m=>(
+                <button key={m} onClick={()=>switchMode(m)}
+                  className="flex-1 py-1.5 rounded-lg text-sm font-medium transition-all capitalize"
+                  style={mode===m?{background:accentColor,color:"#fff",boxShadow:`0 2px 8px ${accentColor}66`}:{color:"#64748b"}}>
+                  {m==="login"?"Sign In":"Register"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Back button — forgot mode */}
+          {mode==="forgot" && (
+            <button onClick={()=>switchMode("login")} className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm mb-5 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
+              Back to sign in
+            </button>
+          )}
+
+          <h2 className="text-white font-semibold text-base mb-1">
+            {mode==="login"?"Welcome back":mode==="register"?"Create your account":"Reset your password"}
+          </h2>
+          <p className="text-slate-500 text-xs mb-5">
+            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":"We'll send a reset link to your email."}
+          </p>
+
+          {/* Error / info banners */}
+          {error && (
+            <div className="flex items-start gap-2 bg-red-950/70 border border-red-800/60 text-red-300 text-xs rounded-xl px-3 py-2.5 mb-4">
+              <span className="flex-shrink-0 mt-0.5">⚠</span><span>{error}</span>
+            </div>
+          )}
+          {info && (
+            <div className="flex items-start gap-2 bg-emerald-950/70 border border-emerald-800/60 text-emerald-300 text-xs rounded-xl px-3 py-2.5 mb-4">
+              <span className="flex-shrink-0 mt-0.5">✓</span><span>{info}</span>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-4">
+            {/* Display name — register only */}
+            {mode==="register" && (
+              <div className="fade-in">
+                <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Display Name</label>
+                <input value={name} onChange={e=>setName(e.target.value)} autoFocus
+                  className={inputCls} placeholder="James Gallagher"/>
+              </div>
+            )}
+
+            {/* Email */}
+            <div>
+              <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Email</label>
+              <div className="relative">
+                <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&submit()}
+                  autoFocus={mode==="login"||mode==="forgot"}
+                  className={inputCls+" pl-9"} placeholder="you@yourdomain.com"/>
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+              </div>
+            </div>
+
+            {/* Password — not shown on forgot */}
+            {mode!=="forgot" && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs text-slate-400 uppercase tracking-widest font-medium">Password</label>
+                  {mode==="login" && (
+                    <button onClick={()=>switchMode("forgot")}
+                      className="text-xs transition-colors hover:opacity-80" style={{color:accentColor}}>
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input type={showPass?"text":"password"} value={password}
+                    onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
+                    className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                  </svg>
+                  <button type="button" onClick={()=>setShowP(p=>!p)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
+                    {showPass?"Hide":"Show"}
+                  </button>
+                </div>
+                {/* Password strength bar — register only */}
+                {mode==="register" && password.length>0 && (
+                  <div className="mt-2 fade-in">
+                    <div className="flex gap-1 mb-1">
+                      {[1,2,3,4].map(i=>(
+                        <div key={i} className="flex-1 h-1 rounded-full transition-all"
+                          style={{background:strength>=i?strengthColor:"#1e293b"}}/>
+                      ))}
+                    </div>
+                    <p className="text-xs" style={{color:strengthColor||"#64748b"}}>{strengthLabel}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Primary submit button */}
+          <button onClick={submit} disabled={loading}
+            className="w-full mt-5 py-2.5 rounded-xl text-white text-sm font-semibold transition-all hover:opacity-90 active:scale-[.98] disabled:opacity-50"
+            style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 4px 16px ${accentColor}55`}}>
+            {loading?"Please wait…"
+              :mode==="login"?"Sign In →"
+              :mode==="register"?"Create Account →"
+              :"Send Reset Link →"}
+          </button>
+
+          {/* Divider + Microsoft SSO — not shown on forgot */}
+          {mode!=="forgot" && (
+            <>
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-slate-800"/>
+                <span className="text-slate-600 text-xs">or</span>
+                <div className="flex-1 h-px bg-slate-800"/>
+              </div>
+              <button onClick={msalSignIn} disabled={msalLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-medium border transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 hover:bg-slate-700/60"
+                style={{background:"rgba(30,41,59,.8)",borderColor:"#334155",color:"#cbd5e1"}}>
+                {msalLoading
+                  ? <span className="text-xs text-slate-400">Opening Microsoft login…</span>
+                  : <>
+                      {/* Microsoft logo */}
+                      <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 21 21" fill="none">
+                        <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
+                        <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
+                        <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
+                        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                      </svg>
+                      Sign in with Microsoft
+                    </>
+                }
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-center gap-3 mt-5">
+          <span className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
+            Azure secured
+          </span>
+          <span className="text-slate-700">·</span>
+          <span className="text-xs text-slate-600">Data in your tenant</span>
+          <span className="text-slate-700">·</span>
+          <span className="text-xs text-slate-600">next2it.co.uk</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Storage Status Badge ───────────────────────────────────────────────────
+function StorageBadge({ mode }) {
+  const cfg = {
+    azure:  { dot:"bg-emerald-500", label:"Azure",  title:"Syncing to Azure Blob Storage" },
+    local:  { dot:"bg-yellow-500",  label:"Local",  title:"Using localStorage (Azure not connected)" },
+    memory: { dot:"bg-red-500",     label:"Memory", title:"No persistence — data will be lost on refresh" },
+  }[mode] || { dot:"bg-slate-500", label:"?", title:"Unknown storage mode" };
+  return (
+    <span title={cfg.title} className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 bg-slate-800/60 border border-slate-700/50 px-2 py-1 rounded-full cursor-default">
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${mode==="azure"?"pulse-dot":""}`}/>
+      {cfg.label}
+    </span>
+  );
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 function App() {
-  const [tasks,setTasks]     = useState(()=>{try{const s=localStorage.getItem("opsboard_tasks");return s?JSON.parse(s):SEED_TASKS;}catch{return SEED_TASKS;}});
-  const [settings,setSettings] = useState(()=>{try{const s=localStorage.getItem("opsboard_settings");return s?{...DEFAULT_SETTINGS,...JSON.parse(s)}:DEFAULT_SETTINGS;}catch{return DEFAULT_SETTINGS;}});
+  // auth states: "loading" | "unauthenticated" | "authenticated"
+  const [authState,setAuthState]   = useState("loading");
+  const [user,setUser]             = useState(null);
+  const [tasks,setTasks]           = useState(SEED_TASKS);
+  const [settings,setSettings]     = useState(DEFAULT_SETTINGS);
+  const [dataLoaded,setDataLoaded] = useState(false);
+  const [storageMode,setStorageMode] = useState("local");
   const [activeTab,setActiveTab]   = useState("Dashboard");
   const [selectedId,setSelectedId] = useState(null);
   const [showNew,setShowNew]       = useState(false);
@@ -1054,12 +1526,49 @@ function App() {
   const [showSearch,setShowSearch] = useState(false);
   const { toasts, toast, dismiss } = useToast();
 
-  useEffect(()=>{try{localStorage.setItem("opsboard_tasks",JSON.stringify(tasks));}catch{}},[tasks]);
-  useEffect(()=>{try{localStorage.setItem("opsboard_settings",JSON.stringify(settings));document.title=settings.appName||"OpsBoard";}catch{}},[settings]);
-
-  // Keyboard shortcuts
+  // ── Bootstrap ────────────────────────────────────────────────────────────
   useEffect(()=>{
-    const handler=e=>{
+    const init = async () => {
+      if (!azureConfigured()) {
+        // Azure not set up yet — skip auth, use localStorage directly
+        const t = await StorageService.load("tasks", SEED_TASKS);
+        const s = await StorageService.load("settings", DEFAULT_SETTINGS);
+        setTasks(t); setSettings({...DEFAULT_SETTINGS,...s});
+        setStorageMode(StorageService.mode());
+        setUser({name:"Local Mode",email:"",id:"local"});
+        setAuthState("authenticated"); setDataLoaded(true);
+        return;
+      }
+      // Try to restore session from this tab
+      const restored = AuthService.restoreSession();
+      if (restored) {
+        const t = await StorageService.load("tasks", SEED_TASKS);
+        const s = await StorageService.load("settings", DEFAULT_SETTINGS);
+        setTasks(t); setSettings({...DEFAULT_SETTINGS,...s});
+        setStorageMode(StorageService.mode());
+        setUser(restored); setAuthState("authenticated"); setDataLoaded(true);
+      } else {
+        setAuthState("unauthenticated");
+      }
+    };
+    init();
+  },[]);
+
+  // ── Auto-save ────────────────────────────────────────────────────────────
+  useEffect(()=>{
+    if (!dataLoaded) return;
+    StorageService.save("tasks",tasks).then(m=>{ if(m) setStorageMode(m); });
+  },[tasks]);
+
+  useEffect(()=>{
+    if (!dataLoaded) return;
+    StorageService.save("settings",settings);
+    document.title = settings.appName||"OpsBoard";
+  },[settings]);
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  useEffect(()=>{
+    const h=e=>{
       const tag=document.activeElement?.tagName;
       if(["INPUT","TEXTAREA","SELECT"].includes(tag))return;
       if(e.key==="Escape"){setShowNew(false);setShowSearch(false);setSearch("");setSelectedId(null);return;}
@@ -1071,24 +1580,63 @@ function App() {
       if(e.key==="i"||e.key==="I"){setActiveTab("Incidents");return;}
       if(e.key==="v"||e.key==="V"){setActiveTab("Vulnerabilities");return;}
     };
-    window.addEventListener("keydown",handler);
-    return()=>window.removeEventListener("keydown",handler);
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
   },[]);
 
-  const selectedTask = tasks.find(t=>t.id===selectedId)||null;
-  const select = id=>setSelectedId(p=>p===id?null:id);
-  const update = u=>setTasks(ts=>ts.map(t=>t.id===u.id?u:t));
-  const del    = id=>{setTasks(ts=>ts.filter(t=>t.id!==id));setSelectedId(null);};
-  const add    = nt=>{const id=Math.max(...tasks.map(t=>t.id),0)+1;setTasks(ts=>[{...nt,id,createdAt:today()},...ts]);};
+  // ── Auth handlers ────────────────────────────────────────────────────────
+  const handleAuth = async u => {
+    const t = await StorageService.load("tasks",SEED_TASKS);
+    const s = await StorageService.load("settings",DEFAULT_SETTINGS);
+    setTasks(t); setSettings({...DEFAULT_SETTINGS,...s});
+    setStorageMode(StorageService.mode());
+    setUser(u); setAuthState("authenticated"); setDataLoaded(true);
+    toast(`Welcome back, ${u.name.split(" ")[0]}!`,"success");
+  };
+  const handleLogout = () => {
+    AuthService.logout();
+    setAuthState("unauthenticated"); setUser(null); setDataLoaded(false); setSelectedId(null);
+  };
+
+  // ── Task handlers ────────────────────────────────────────────────────────
+  const select       = id=>setSelectedId(p=>p===id?null:id);
+  const update       = u=>setTasks(ts=>ts.map(t=>t.id===u.id?u:t));
+  const del          = id=>{setTasks(ts=>ts.filter(t=>t.id!==id));setSelectedId(null);};
+  const add          = nt=>{const id=Math.max(...tasks.map(t=>t.id),0)+1;setTasks(ts=>[{...nt,id,createdAt:today()},...ts]);};
   const saveSettings = s=>setSettings({...DEFAULT_SETTINGS,...s});
+  const switchTab    = t=>{setActiveTab(t);setSelectedId(null);if(showSearch){setShowSearch(false);setSearch("");}};
 
-  const switchTab = t=>{setActiveTab(t);setSelectedId(null);if(showSearch){setShowSearch(false);setSearch("");}};
+  const selectedTask = tasks.find(t=>t.id===selectedId)||null;
 
+  // ── Render: loading ──────────────────────────────────────────────────────
+  if (authState==="loading") return (
+    <div className="min-h-screen flex items-center justify-center" style={{background:"#0a0f1e"}}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{background:DEFAULT_SETTINGS.accentColor}}>
+          <svg width="20" height="20" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="1" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+            <rect x="8" y="1" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+            <rect x="1" y="8" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+            <rect x="8" y="8" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+          </svg>
+        </div>
+        <div className="text-slate-500 text-sm">Loading…</div>
+      </div>
+    </div>
+  );
+
+  // ── Render: login ────────────────────────────────────────────────────────
+  if (authState==="unauthenticated") return (
+    <><LoginPage onAuth={handleAuth} accentColor={settings.accentColor}/><ToastContainer toasts={toasts} dismiss={dismiss}/></>
+  );
+
+  // ── Render: main app ─────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{background:"#0a0f1e"}}>
       <TopNav activeTab={activeTab} setActiveTab={switchTab} onNew={()=>setShowNew(true)}
         settings={settings} tasks={tasks} search={search} setSearch={setSearch}
-        showSearch={showSearch} setShowSearch={setShowSearch}/>
+        showSearch={showSearch} setShowSearch={setShowSearch}
+        storageMode={storageMode} user={user} onLogout={handleLogout}/>
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           {showSearch
