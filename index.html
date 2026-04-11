@@ -1098,7 +1098,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
   return (
     <div className="fade-in flex h-full">
       {/* Sidebar */}
-      <div className="w-48 border-r p-4 flex-shrink-0 overflow-y-auto" style="border-color:var(--border)">
+      <div className="w-48 border-r p-4 flex-shrink-0 overflow-y-auto" style={{borderColor:"var(--border)"}}>
         <div className="text-xs text-slate-500 uppercase tracking-wide mb-3">Settings</div>
         {sections.map(s=>(
           <button key={s} onClick={()=>setSection(s)}
