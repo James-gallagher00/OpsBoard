@@ -503,92 +503,113 @@ function Dashboard({ tasks, onSelect, settings }) {
   const byStatus = STATUSES.map(s=>({status:s,count:tasks.filter(t=>t.status===s).length}));
   const recent = [...tasks].sort((a,b)=>b.id-a.id).slice(0,5);
   return (
-    <div className="p-6 fade-in max-w-6xl">
-      <div className="flex items-center justify-between mb-5">
+    <div className="p-4 sm:p-6 fade-in max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-white font-semibold text-lg">Dashboard</h2>
         <span className="text-slate-500 text-xs">{new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</span>
       </div>
-      {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+
+      {/* Stat cards — 2 cols on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         {stats.map(s=>(
-          <div key={s.label} className={`${s.bg} border ${s.border} rounded-xl p-4 glow`}>
-            <div className={`text-3xl font-bold ${s.color} mb-1`}>{s.value}</div>
-            <div className="text-slate-400 text-xs">{s.label}</div>
-            {s.label==="Overdue"&&s.value>0&&<div className="mt-1.5 flex items-center gap-1 text-xs text-red-400"><span className="pulse-dot w-1.5 h-1.5 rounded-full bg-red-500 inline-block"/>Needs attention</div>}
+          <div key={s.label} className={`${s.bg} border ${s.border} rounded-xl p-4`}>
+            <div className={`text-3xl font-bold ${s.color} mb-0.5`}>{s.value}</div>
+            <div className="text-slate-400 text-sm">{s.label}</div>
+            {s.label==="Overdue"&&s.value>0&&(
+              <div className="mt-1.5 flex items-center gap-1 text-xs text-red-400">
+                <span className="pulse-dot w-1.5 h-1.5 rounded-full bg-red-500 inline-block"/>
+                Needs attention
+              </div>
+            )}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-4 mb-4">
-        {/* Progress ring */}
-        <div className="glass rounded-xl p-4 flex flex-col items-center justify-center">
-          <svg width="80" height="80" className="progress-ring mb-2">
-            <circle cx="40" cy="40" r={r} fill="none" stroke="#1e293b" strokeWidth="6"/>
-            <circle cx="40" cy="40" r={r} fill="none" stroke={settings.accentColor} strokeWidth="6"
-              strokeDasharray={circ} strokeDashoffset={circ*(1-pct/100)} strokeLinecap="round" style={{transition:"stroke-dashoffset .6s ease"}}/>
-          </svg>
-          <div className="text-2xl font-bold text-white">{pct}%</div>
-          <div className="text-slate-400 text-xs">Completion rate</div>
-        </div>
-        {/* Status breakdown */}
-        <div className="glass rounded-xl p-4">
-          <h3 className="text-slate-300 font-medium text-sm mb-3">By Status</h3>
-          {byStatus.map(({status,count})=>(
-            <div key={status} className="flex items-center gap-2 mb-1.5">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-24 text-center ${sc(status)}`}>{status}</span>
-              <div className="flex-1 bg-slate-800 rounded-full h-1.5">
-                <div className="h-1.5 rounded-full" style={{width:tasks.length?`${(count/tasks.length)*100}%`:"0%",background:settings.accentColor,transition:"width .5s ease"}}/>
-              </div>
-              <span className="text-slate-400 text-xs w-4 text-right">{count}</span>
-            </div>
-          ))}
-        </div>
-        {/* Recent */}
-        <div className="glass rounded-xl p-4">
-          <h3 className="text-slate-300 font-medium text-sm mb-3">Recent Activity</h3>
-          {recent.map(t=>(
-            <div key={t.id} onClick={()=>onSelect(t.id)}
-              className="flex items-start gap-2 mb-2 cursor-pointer hover:opacity-80 transition-opacity">
-              <span className={`mt-0.5 text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${sc(t.status)}`}>{t.status}</span>
-              <span className="text-slate-300 text-xs truncate flex-1">{t.title}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      {/* Overdue alert */}
+
+      {/* Overdue alert — shown early on mobile so it's not buried */}
       {overdue.length>0&&(
-        <div className="glass rounded-xl p-4 border-red-900/50 mb-4">
+        <div className="glass rounded-xl p-4 border border-red-900/50 mb-4">
           <h3 className="text-red-400 font-medium text-sm mb-2 flex items-center gap-2">
             <span className="pulse-dot w-2 h-2 rounded-full bg-red-500 inline-block"/>
             {overdue.length} Overdue Task{overdue.length>1?"s":""}
           </h3>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             {overdue.map(t=>(
               <div key={t.id} onClick={()=>onSelect(t.id)}
                 className="flex items-center gap-3 cursor-pointer hover:opacity-80">
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${pc(t.priority)}`}>{t.priority}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${pc(t.priority)}`}>{t.priority}</span>
                 <span className="text-slate-300 text-sm flex-1 truncate">{t.title}</span>
-                <span className="text-red-400 text-xs font-mono">{fmtDate(t.dueDate)}</span>
+                <span className="text-red-400 text-xs font-mono flex-shrink-0">{fmtDate(t.dueDate)}</span>
               </div>
             ))}
           </div>
         </div>
       )}
-      {/* Category heatmap */}
+
+      {/* Progress + Status — stack on mobile, side by side on sm+ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        {/* Progress ring */}
+        <div className="glass rounded-xl p-5 flex items-center gap-5">
+          <svg width="72" height="72" className="progress-ring flex-shrink-0">
+            <circle cx="36" cy="36" r={r} fill="none" stroke="#1e293b" strokeWidth="6"/>
+            <circle cx="36" cy="36" r={r} fill="none" stroke={settings.accentColor} strokeWidth="6"
+              strokeDasharray={circ} strokeDashoffset={circ*(1-pct/100)} strokeLinecap="round"
+              style={{transition:"stroke-dashoffset .6s ease"}}/>
+          </svg>
+          <div>
+            <div className="text-3xl font-bold text-white">{pct}%</div>
+            <div className="text-slate-400 text-sm mt-0.5">Completion rate</div>
+            <div className="text-slate-500 text-xs mt-1">{tasks.filter(t=>t.status==="Done").length} of {tasks.length} tasks done</div>
+          </div>
+        </div>
+
+        {/* Status breakdown */}
+        <div className="glass rounded-xl p-4">
+          <h3 className="text-slate-300 font-medium text-sm mb-3">By Status</h3>
+          <div className="flex flex-col gap-2">
+            {byStatus.map(({status,count})=>(
+              <div key={status} className="flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 w-20 text-center ${sc(status)}`}>{status}</span>
+                <div className="flex-1 bg-slate-800 rounded-full h-1.5">
+                  <div className="h-1.5 rounded-full transition-all duration-500" style={{width:tasks.length?`${(count/tasks.length)*100}%`:"0%",background:settings.accentColor}}/>
+                </div>
+                <span className="text-slate-400 text-xs w-5 text-right flex-shrink-0">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="glass rounded-xl p-4 mb-4">
+        <h3 className="text-slate-300 font-medium text-sm mb-3">Recent Activity</h3>
+        <div className="flex flex-col gap-2">
+          {recent.map(t=>(
+            <div key={t.id} onClick={()=>onSelect(t.id)}
+              className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+              <span className={`text-xs px-2 py-0.5 rounded font-medium flex-shrink-0 ${sc(t.status)}`}>{t.status}</span>
+              <span className="text-slate-300 text-sm truncate flex-1">{t.title}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tasks by Category */}
       <div className="glass rounded-xl p-4">
         <h3 className="text-slate-300 font-medium text-sm mb-3">Tasks by Category</h3>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
           {settings.categories.map(cat=>{
             const all=tasks.filter(t=>t.category===cat);
             const done=all.filter(t=>t.status==="Done").length;
             if(!all.length)return null;
             return (
-              <div key={cat} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 min-w-[90px]">
-                <div className={`text-xs font-medium ${cc(cat)} mb-1`}>{cat}</div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-white font-bold text-lg">{all.length}</span>
+              <div key={cat} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2.5">
+                <div className={`text-xs font-medium ${cc(cat)} mb-1.5 truncate`}>{cat}</div>
+                <div className="flex items-baseline gap-1.5 mb-1.5">
+                  <span className="text-white font-bold text-xl">{all.length}</span>
                   <span className="text-slate-500 text-xs">{done} done</span>
                 </div>
-                <div className="mt-1.5 bg-slate-700 rounded-full h-1">
+                <div className="bg-slate-700 rounded-full h-1">
                   <div className="h-1 rounded-full" style={{width:all.length?`${(done/all.length)*100}%`:"0%",background:settings.accentColor}}/>
                 </div>
               </div>
