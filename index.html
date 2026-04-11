@@ -377,64 +377,74 @@ function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSe
     return 0;
   };
   return (
-    <nav className="flex items-center gap-0 px-4 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur h-12 select-none flex-shrink-0 z-40">
-      <div className="flex items-center gap-1.5 mr-5">
-        <div className="w-6 h-6 rounded flex items-center justify-center shadow-lg" style={{background:settings.accentColor}}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <rect x="1" y="1" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
-            <rect x="8" y="1" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
-            <rect x="1" y="8" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
-            <rect x="8" y="8" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
-          </svg>
+    <nav className="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur select-none flex-shrink-0 z-40">
+      {/* Top bar: logo + controls */}
+      <div className="flex items-center gap-2 px-3 h-12">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="w-6 h-6 rounded flex items-center justify-center shadow-lg" style={{background:settings.accentColor}}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+              <rect x="8" y="1" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+              <rect x="1" y="8" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+              <rect x="8" y="8" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+            </svg>
+          </div>
+          <span className="font-bold text-white text-sm tracking-tight">
+            {settings.appName.slice(0,-5)||"Ops"}
+            <span style={{color:settings.accentColor}}>{settings.appName.slice(-5)||"Board"}</span>
+          </span>
+          {settings.domain && <span className="hidden sm:inline ml-1 text-xs text-slate-500 font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded-full">{settings.domain}</span>}
         </div>
-        <span className="font-bold text-white text-sm tracking-tight">
-          {settings.appName.slice(0,-5)||"Ops"}
-          <span style={{color:settings.accentColor}}>{settings.appName.slice(-5)||"Board"}</span>
-        </span>
-        {settings.domain && <span className="ml-1 text-xs text-slate-500 font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded-full">{settings.domain}</span>}
+        <div className="flex-1"/>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {showSearch
+            ? <SearchBar value={search} onChange={setSearch} onClose={()=>{setShowSearch(false);setSearch("");}}/>
+            : <>
+                <button onClick={()=>setShowSearch(true)}
+                  className="p-1.5 rounded-md text-slate-400 hover:text-white transition-colors" title="Search (/)">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </button>
+                {activeTab!=="Settings" &&
+                  <button onClick={onNew}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-white text-sm font-medium hover:opacity-90 transition-all shadow-lg"
+                    style={{background:settings.accentColor}} title="New Task (N)">
+                    <span className="text-base leading-none">+</span>
+                    <span className="hidden sm:inline"> New Task</span>
+                  </button>
+                }
+                {storageMode && <StorageBadge mode={storageMode}/>}
+                <div className="flex items-center gap-1.5">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{background:settings.accentColor+"cc"}}>
+                    {settings.initials}
+                  </div>
+                  <span className="hidden md:inline text-sm text-slate-300">{settings.userName}</span>
+                </div>
+                {onLogout && user?.id !== "local" && (
+                  <button onClick={onLogout} title="Sign out"
+                    className="text-slate-600 hover:text-slate-300 text-xs px-2 py-1 rounded hover:bg-slate-800 transition-colors">
+                    Sign out
+                  </button>
+                )}
+              </>
+          }
+        </div>
       </div>
-      <div className="w-px h-5 bg-slate-700/60 mr-4"/>
-      {showSearch
-        ? <SearchBar value={search} onChange={setSearch} onClose={()=>{setShowSearch(false);setSearch("");}}/>
-        : tabs.map(t=>{
+      {/* Scrollable tab strip */}
+      {!showSearch && (
+        <div className="flex overflow-x-auto border-t border-slate-800/60" style={{scrollbarWidth:"none",msOverflowStyle:"none"}}>
+          {tabs.map(t=>{
             const badge = badgeCount(t);
             return (
               <button key={t} onClick={()=>setActiveTab(t)}
-                className={`relative h-12 px-3 text-sm font-medium transition-all border-b-2 ${activeTab===t?"border-indigo-500 text-indigo-400":"border-transparent text-slate-400 hover:text-slate-200"}`}
-                style={activeTab===t?{borderColor:settings.accentColor,color:settings.accentColor}:{}}>
+                className={`relative flex-shrink-0 h-10 px-4 text-sm font-medium transition-all border-b-2 whitespace-nowrap ${activeTab===t?"text-indigo-400":"border-transparent text-slate-400 hover:text-slate-200"}`}
+                style={activeTab===t?{borderColor:settings.accentColor,color:settings.accentColor}:{borderColor:"transparent"}}>
                 {t}
-                {badge>0 && <span className="absolute top-2 right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">{badge>9?"9+":badge}</span>}
+                {badge>0 && <span className="absolute top-1.5 right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">{badge>9?"9+":badge}</span>}
               </button>
             );
-          })
-      }
-      <div className="flex-1"/>
-      <div className="flex items-center gap-2 mr-3">
-        <button onClick={()=>{setShowSearch(s=>!s);if(showSearch)setSearch("");}}
-          className={`p-1.5 rounded-md text-slate-400 hover:text-white transition-colors ${showSearch?"bg-slate-700 text-white":""}`} title="Search (/)">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-        </button>
-        {activeTab!=="Settings"&&<button onClick={onNew}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-md text-white text-sm font-medium hover:opacity-90 transition-all shadow-lg"
-          style={{background:settings.accentColor}} title="New Task (N)">
-          <span className="text-base leading-none">+</span> New Task
-        </button>}
-      </div>
-      <div className="flex items-center gap-2">
-        {storageMode && <StorageBadge mode={storageMode}/>}
-        <div className="flex items-center gap-2 text-sm text-slate-300">
-          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:settings.accentColor+"cc"}}>
-            {settings.initials}
-          </div>
-          <span className="hidden md:inline">{settings.userName}</span>
+          })}
         </div>
-        {onLogout && user?.id !== "local" && (
-          <button onClick={onLogout} title="Sign out"
-            className="text-slate-600 hover:text-slate-300 text-xs px-2 py-1 rounded hover:bg-slate-800 transition-colors ml-1">
-            Sign out
-          </button>
-        )}
-      </div>
+      )}
     </nav>
   );
 }
