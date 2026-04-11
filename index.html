@@ -212,7 +212,7 @@ const AuthService = {
     const res = await fetch(`${AZURE.functionsUrl}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, displayName }),
+      body: JSON.stringify({ email, password, name: displayName }),
     });
     if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Registration failed (${res.status})`); }
     return this._apply(await res.json(), email);
@@ -250,8 +250,9 @@ const AuthService = {
 
   _apply(data, email) {
     this._token = data.token;
-    this._user  = { id: data.userId, name: data.displayName, email };
-    StorageService.init(data.userId, data.sasToken);
+    const u     = data.user || {};
+    this._user  = { id: u.id || data.userId, name: u.name || data.displayName, email };
+    StorageService.init(this._user.id, data.sasToken);
     // Session stored tab-scoped only (expires on browser close)
     sessionStorage.setItem("opsboard_session", JSON.stringify({ token: data.token, user: this._user, sasToken: data.sasToken }));
     return this._user;
