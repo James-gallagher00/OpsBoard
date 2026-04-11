@@ -63,21 +63,12 @@ const CAT_COLORS = {
   Monitoring:"text-emerald-400",Patch:"text-pink-400"
 };
 const DEFAULT_SETTINGS = {
-  appName:"OpsBoard", domain:"", userName:"James Gallagher", initials:"JG",
-  assignees:["James G.","Sarah K.","Dev Ops","Unassigned"],
+  appName:"OpsBoard", domain:"", userName:"", initials:"",
+  assignees:["Unassigned"],
   categories:["Vulnerability","Deployment","Security","Incident","Compliance","Infrastructure","Monitoring","Patch"],
   accentColor:"#6366f1"
 };
-const SEED_TASKS = [
-  {id:1,title:"Patch CVE-2025-44228 on all production nodes",description:"Log4Shell variant affecting container runtime.\n\nScope: 14 nodes across eu-west-1 and us-east-1.\nImpact: Remote code execution if unpatched.",status:"In Progress",priority:"Critical",category:"Vulnerability",assignee:"James G.",dueDate:"2026-04-10",tags:["CVE","Log4j","Production"],checklist:[{id:1,text:"Identify affected nodes",done:true},{id:2,text:"Test patch in staging",done:true},{id:3,text:"Rolling deploy to prod",done:false},{id:4,text:"Verify with vulnerability scanner",done:false}],createdAt:"2026-04-08",notes:""},
-  {id:2,title:"Kubernetes v1.31 cluster upgrade — eu-west-1",description:"Scheduled minor version upgrade. Control plane first, then worker nodes via rolling update.",status:"Todo",priority:"High",category:"Deployment",assignee:"Sarah K.",dueDate:"2026-04-15",tags:["Kubernetes","Upgrade"],checklist:[{id:1,text:"Backup etcd snapshot",done:false},{id:2,text:"Upgrade control plane",done:false},{id:3,text:"Drain and upgrade node group 1",done:false},{id:4,text:"Drain and upgrade node group 2",done:false},{id:5,text:"Run conformance tests",done:false}],createdAt:"2026-04-07",notes:""},
-  {id:3,title:"SOC 2 Type II — access review audit",description:"Quarterly access review required for SOC 2 compliance. Revoke orphaned accounts and document exceptions.",status:"Review",priority:"High",category:"Compliance",assignee:"James G.",dueDate:"2026-04-20",tags:["SOC2","Audit","IAM"],checklist:[{id:1,text:"Export IAM user report",done:true},{id:2,text:"Identify orphaned accounts",done:true},{id:3,text:"Get manager sign-off on access list",done:false},{id:4,text:"Revoke stale accounts",done:false}],createdAt:"2026-04-05",notes:""},
-  {id:4,title:"Incident: API gateway 5xx spike — 2026-04-08",description:"Production API gateway returned 5xx for ~12 minutes between 14:22–14:34 UTC. Root cause: Redis connection pool exhaustion.",status:"Done",priority:"Critical",category:"Incident",assignee:"Dev Ops",dueDate:"2026-04-09",tags:["P1","API","Redis"],checklist:[{id:1,text:"Acknowledge and open war room",done:true},{id:2,text:"Identify root cause",done:true},{id:3,text:"Deploy hotfix",done:true},{id:4,text:"Write post-mortem",done:true}],createdAt:"2026-04-08",notes:"Post-mortem completed. Redis maxconn raised to 500."},
-  {id:5,title:"Deploy WAF ruleset v3.2 to Cloudflare",description:"Updated managed WAF rules including OWASP CRS 4.0. Test on staging zone before production rollout.",status:"Todo",priority:"Medium",category:"Security",assignee:"James G.",dueDate:"2026-04-18",tags:["WAF","Cloudflare","OWASP"],checklist:[{id:1,text:"Review new rule changes",done:false},{id:2,text:"Deploy to staging zone",done:false},{id:3,text:"Monitor false positive rate for 24h",done:false},{id:4,text:"Promote to production",done:false}],createdAt:"2026-04-06",notes:""},
-  {id:6,title:"Set up Falco runtime security on EKS",description:"Deploy Falco as DaemonSet across all EKS clusters to detect anomalous runtime behaviour. Integrate alerts with PagerDuty.",status:"In Progress",priority:"High",category:"Security",assignee:"Sarah K.",dueDate:"2026-04-22",tags:["Falco","EKS","Runtime"],checklist:[{id:1,text:"Install Falco via Helm",done:true},{id:2,text:"Configure custom rules",done:false},{id:3,text:"Wire to PagerDuty webhook",done:false}],createdAt:"2026-04-04",notes:""},
-  {id:7,title:"Terraform state migration to S3 remote backend",description:"Move all local Terraform state files to S3 with DynamoDB locking. Required before team expansion.",status:"Blocked",priority:"Medium",category:"Infrastructure",assignee:"James G.",dueDate:"2026-04-25",tags:["Terraform","IaC","S3"],checklist:[{id:1,text:"Create S3 bucket + DynamoDB table",done:true},{id:2,text:"Migrate dev workspace",done:false},{id:3,text:"Migrate staging workspace",done:false},{id:4,text:"Migrate prod workspace",done:false}],createdAt:"2026-04-03",notes:"Blocked on AWS permissions approval from infra team."},
-  {id:8,title:"Implement SIEM alerting for brute force detection",description:"Configure Elastic SIEM rules to alert on >10 failed auth attempts within 60s across SSH and RDP.",status:"Todo",priority:"High",category:"Monitoring",assignee:"Dev Ops",dueDate:"2026-04-30",tags:["SIEM","Elastic","Brute Force"],checklist:[{id:1,text:"Define detection threshold",done:false},{id:2,text:"Write Elastic rule",done:false},{id:3,text:"Test with simulated attack",done:false},{id:4,text:"Configure alert routing",done:false}],createdAt:"2026-04-02",notes:""},
-];
+const SEED_TASKS = [];
 
 // ══════════════════════════════════════════════════════════════════════════
 // ██  AZURE CONFIGURATION  — fill in your values here
@@ -86,12 +77,12 @@ const AZURE = {
   // ▶ EDIT 1 — Your Azure Functions App base URL (no trailing slash)
   //   Azure Portal → Function App → Overview → URL
   //   e.g. "https://opsboard-api.azurewebsites.net/api"
-  functionsUrl: "https://opsboardlogic.azurewebsites.net/api",        // ← REPLACE
+  functionsUrl: "https://opsboardlogic.azurewebsites.net/api",
 
   // ▶ EDIT 2 — Your Azure Blob Storage account name
   //   Azure Portal → Storage accounts → your account → name
   //   e.g. "opsboardstorage"
-  storageAccount: "opsboardstorage",     // ← REPLACE
+  storageAccount: "opsboardstorage",
 
   // ▶ EDIT 3 — Container name (create manually in your storage account)
   //   Azure Portal → Storage Account → Containers → + Container → name below
@@ -100,12 +91,12 @@ const AZURE = {
   // ▶ EDIT 4 — Azure AD App Registration → Overview → Application (client) ID
   //   Azure Portal → Azure Active Directory → App registrations → your app → Overview
   //   e.g. "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-  clientId: "ef58aa0d-fa22-46aa-9536-fba4a52a90ff",                  // ← REPLACE
+  clientId: "ef58aa0d-fa22-46aa-9536-fba4a52a90ff",
 
   // ▶ EDIT 5 — Azure AD App Registration → Overview → Directory (tenant) ID
   //   Same page as above
   //   e.g. "ffffffff-eeee-dddd-cccc-bbbbbbbbbbbb"
-  tenantId: "f7ffe647-4a1c-4a1f-94da-9c6570990491",                  // ← REPLACE
+  tenantId: "f7ffe647-4a1c-4a1f-94da-9c6570990491",
 };
 
 // Returns true only when required values have been filled in
@@ -1034,10 +1025,10 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
               <button onClick={()=>fileRef.current.click()} className="px-4 py-2 rounded-md text-slate-200 text-sm font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700">Import from JSON</button>
             </div>
             <div className="glass rounded-xl p-5 mb-3">
-              <h3 className="text-slate-300 text-sm font-medium mb-1">Reset to Defaults</h3>
-              <p className="text-slate-500 text-xs mb-3">Reload original seed data. Cannot be undone.</p>
-              <button onClick={()=>setConfirm({title:"Reset to defaults?",message:"All tasks replaced with seed data.",confirmLabel:"Reset",onConfirm:()=>{onResetTasks();setConfirm(null);toast("Tasks reset to defaults","warn");}})}
-                className="px-4 py-2 rounded-md text-orange-300 text-sm font-medium bg-orange-950 hover:bg-orange-900 border border-orange-900">Reset Tasks</button>
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Clear All Tasks</h3>
+              <p className="text-slate-500 text-xs mb-3">Permanently delete every task from the board. Cannot be undone.</p>
+              <button onClick={()=>setConfirm({title:"Clear all tasks?",message:"Every task will be permanently deleted.",confirmLabel:"Clear All",onConfirm:()=>{onResetTasks();setConfirm(null);toast("All tasks cleared","warn");}})}
+                className="px-4 py-2 rounded-md text-orange-300 text-sm font-medium bg-orange-950 hover:bg-orange-900 border border-orange-900">Clear Tasks</button>
             </div>
             <div className="glass rounded-xl p-5 mb-3">
               <h3 className="text-slate-300 text-sm font-medium mb-1">Clear All Tasks</h3>
@@ -1526,7 +1517,7 @@ function LoginPage({ onAuth, accentColor }) {
                   <div className="fade-in">
                     <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Display Name</label>
                     <input value={name} onChange={e=>setName(e.target.value)} autoFocus
-                      className={inputCls} placeholder="James Gallagher"/>
+                      className={inputCls} placeholder="Your name"/>
                   </div>
                 )}
 
