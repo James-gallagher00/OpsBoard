@@ -163,12 +163,12 @@ const StorageService = {
           // SAS token expired — clear session so user is prompted to re-login
           localStorage.removeItem("opsboard_session");
           this._mode = "local";
-          console.warn("Azure SAS token expired — session cleared, please sign in again.");
+          console.warn("Session expired — please sign in again.");
         } else {
           throw new Error(res.statusText);
         }
       } catch (e) {
-        console.warn("Azure Blob write failed, falling back to localStorage:", e.message);
+        console.warn("Cloud save failed, using local fallback:", e.message);
         this._mode = "local";
       }
     }
@@ -185,13 +185,13 @@ const StorageService = {
           // SAS token expired — clear session so user is prompted to re-login
           localStorage.removeItem("opsboard_session");
           this._mode = "local";
-          console.warn("Azure SAS token expired — session cleared, please sign in again.");
+          console.warn("Session expired — please sign in again.");
         } else if (res.status !== 404) {
           throw new Error(res.statusText);
         }
         return defaultVal; // 404 = no data yet, that's fine
       } catch (e) {
-        console.warn("Azure Blob read failed, falling back to localStorage:", e.message);
+        console.warn("Cloud load failed, using local fallback:", e.message);
         this._mode = "local";
       }
     }
@@ -255,7 +255,7 @@ const AuthService = {
   // ── Microsoft SSO ──────────────────────────────────────────────────────
   async msalLogin() {
     const msal = getMsal();
-    if (!msal) throw new Error("Microsoft sign-in is not configured for this app.");
+    if (!msal) throw new Error("Work account sign-in is not available.");
     await msal.initialize();
     const result = await msal.loginPopup({ scopes: ["openid","profile","email"] });
     const res = await fetch(`${AZURE.functionsUrl}/auth/microsoft`, {
@@ -1523,7 +1523,7 @@ function LoginPage({ onAuth, accentColor }) {
                 className="w-full py-2.5 rounded-xl text-sm font-medium border transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 hover:bg-slate-700/60"
                 style={{background:"rgba(30,41,59,.8)",borderColor:"#334155",color:"#cbd5e1"}}>
                 {msalLoading
-                  ? <span className="text-xs text-slate-400">Opening Microsoft login…</span>
+                  ? <span className="text-xs text-slate-400">Opening sign-in…</span>
                   : <>
                       {/* Microsoft logo */}
                       <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 21 21" fill="none">
@@ -1532,7 +1532,7 @@ function LoginPage({ onAuth, accentColor }) {
                         <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
                         <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
                       </svg>
-                      Sign in with Microsoft
+                      Sign in with work account
                     </>
                 }
               </button>
@@ -1544,12 +1544,10 @@ function LoginPage({ onAuth, accentColor }) {
         <div className="flex items-center justify-center gap-3 mt-5">
           <span className="flex items-center gap-1.5 text-xs text-slate-600">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
-            Azure secured
+            Secured
           </span>
           <span className="text-slate-700">·</span>
-          <span className="text-xs text-slate-600">Data in your tenant</span>
-          <span className="text-slate-700">·</span>
-          <span className="text-xs text-slate-600">next2it.co.uk</span>
+          <span className="text-xs text-slate-600">Data encrypted in transit</span>
         </div>
       </div>
     </div>
@@ -1559,9 +1557,9 @@ function LoginPage({ onAuth, accentColor }) {
 // ── Storage Status Badge ───────────────────────────────────────────────────
 function StorageBadge({ mode }) {
   const cfg = {
-    azure:  { dot:"bg-emerald-500", label:"Azure",  title:"Syncing to Azure Blob Storage" },
-    local:  { dot:"bg-yellow-500",  label:"Local",  title:"Using localStorage (Azure not connected)" },
-    memory: { dot:"bg-red-500",     label:"Memory", title:"No persistence — data will be lost on refresh" },
+    azure:  { dot:"bg-emerald-500", label:"Synced",  title:"Data is being saved to the cloud" },
+    local:  { dot:"bg-yellow-500",  label:"Offline", title:"Working offline — sign in to sync your data" },
+    memory: { dot:"bg-red-500",     label:"Unsaved", title:"Data will be lost on refresh" },
   }[mode] || { dot:"bg-slate-500", label:"?", title:"Unknown storage mode" };
   return (
     <span title={cfg.title} className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 bg-slate-800/60 border border-slate-700/50 px-2 py-1 rounded-full cursor-default">
