@@ -10,7 +10,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- MSAL.js — Microsoft Authentication Library for browser-based SSO -->
-  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library/2.38.3/msal-browser.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     *{box-sizing:border-box}
     body{margin:0;background:#0a0f1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e2e8f0}
@@ -102,23 +102,50 @@ const AZURE = {
 // Returns true only when required values have been filled in
 const azureConfigured = () =>
   !AZURE.functionsUrl.includes("YOUR_") && !AZURE.storageAccount.includes("YOUR_");
-const msalConfigured = () =>
-  !AZURE.clientId.includes("YOUR_") && !AZURE.tenantId.includes("YOUR_");
+const msalConfigured = () => {
+  if (typeof msal === "undefined") return false; // script failed to load
+  return !AZURE.clientId.includes("YOUR_") && !AZURE.tenantId.includes("YOUR_");
+};
 
 // MSAL instance — created lazily on first Microsoft sign-in attempt
 let _msalInstance = null;
+let _msalInitialised = false;
 const getMsal = () => {
   if (_msalInstance) return _msalInstance;
   if (!msalConfigured()) return null;
+  // Use origin only — path causes redirect_uri_mismatch if App Registration
+  // has the root URL registered (which is the standard setup)
+  const redirectUri = window.location.origin + '/';
   _msalInstance = new msal.PublicClientApplication({
     auth: {
       clientId: AZURE.clientId,
       authority: `https://login.microsoftonline.com/${AZURE.tenantId}`,
-      redirectUri: window.location.origin + window.location.pathname,
+      redirectUri,
+      navigateToLoginRequestUrl: false,
     },
-    cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false },
+    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true },
+    system: {
+      loggerOptions: {
+        loggerCallback: (level, message, containsPii) => {
+          if (!containsPii) console.log('[MSAL]', message);
+        },
+        logLevel: msal.LogLevel?.Warning ?? 2,
+      },
+    },
   });
   return _msalInstance;
+};
+
+const initialiseMsal = async () => {
+  const instance = getMsal();
+  if (!instance) return null;
+  if (!_msalInitialised) {
+    await instance.initialize();
+    _msalInitialised = true;
+    // Handle any redirect response (in case popup was blocked and fell back)
+    await instance.handleRedirectPromise().catch(() => {});
+  }
+  return instance;
 };
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -245,10 +272,29 @@ const AuthService = {
 
   // ── Microsoft SSO ──────────────────────────────────────────────────────
   async msalLogin() {
-    const msal = getMsal();
-    if (!msal) throw new Error("Work account sign-in is not available.");
-    await msal.initialize();
-    const result = await msal.loginPopup({ scopes: ["openid","profile","email"] });
+    const msalInst = await initialiseMsal();
+    if (!msalInst) throw new Error("Work account sign-in is not available.");
+
+    let result;
+    try {
+      result = await msalInst.loginPopup({
+        scopes: ["openid", "profile", "email"],
+        prompt: "select_account",
+      });
+    } catch (err) {
+      // BrowserAuthError: popup_window_error means the popup was blocked
+      if (err?.errorCode === "popup_window_error" || err?.name === "BrowserAuthError") {
+        throw new Error("Sign-in popup was blocked. Please allow popups for this site and try again.");
+      }
+      // User cancelled
+      if (err?.errorCode === "user_cancelled") {
+        throw new Error("Sign-in was cancelled.");
+      }
+      throw new Error(err?.message || "Work account sign-in failed. Please try again.");
+    }
+
+    if (!result?.idToken) throw new Error("No identity token received from sign-in.");
+
     const res = await fetch(`${AZURE.functionsUrl}/auth/microsoft`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1471,6 +1517,9 @@ function LoginPage({ onAuth, accentColor }) {
   const msalSignIn = async () => {
     setML(true); setError("");
     try {
+      if (typeof msal === "undefined") {
+        throw new Error("Sign-in script failed to load. Try disabling browser tracking protection for this site, then refresh.");
+      }
       const user = await AuthService.msalLogin();
       onAuth(user);
     } catch(e) { setError(e.message); }
