@@ -2536,16 +2536,19 @@ Be concise. If asked for a summary, provide it clearly. If asked to do something
     setLoading(true);
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch(`${AZURE.functionsUrl}/chat`, {
         method: "POST",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
           system: systemPrompt(),
           messages: newMessages.map(m=>({role:m.role,content:m.content})),
         }),
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(()=>({}));
+        throw new Error(errData.error || `API error ${res.status}`);
+      }
 
       const data = await res.json();
       const rawText = data.content?.[0]?.text || "Sorry, I didn't get a response.";
