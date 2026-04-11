@@ -159,7 +159,14 @@ const StorageService = {
           body: JSON.stringify(data),
         });
         if (res.ok) return "azure";
-        throw new Error(res.statusText);
+        if (res.status === 403) {
+          // SAS token expired — clear session so user is prompted to re-login
+          localStorage.removeItem("opsboard_session");
+          this._mode = "local";
+          console.warn("Azure SAS token expired — session cleared, please sign in again.");
+        } else {
+          throw new Error(res.statusText);
+        }
       } catch (e) {
         console.warn("Azure Blob write failed, falling back to localStorage:", e.message);
         this._mode = "local";
@@ -174,7 +181,14 @@ const StorageService = {
       try {
         const res = await fetch(this._url(key));
         if (res.ok) return await res.json();
-        if (res.status !== 404) throw new Error(res.statusText);
+        if (res.status === 403) {
+          // SAS token expired — clear session so user is prompted to re-login
+          localStorage.removeItem("opsboard_session");
+          this._mode = "local";
+          console.warn("Azure SAS token expired — session cleared, please sign in again.");
+        } else if (res.status !== 404) {
+          throw new Error(res.statusText);
+        }
         return defaultVal; // 404 = no data yet, that's fine
       } catch (e) {
         console.warn("Azure Blob read failed, falling back to localStorage:", e.message);
@@ -253,14 +267,13 @@ const AuthService = {
     const u     = data.user || {};
     this._user  = { id: u.id || data.userId, name: u.name || data.displayName, email };
     StorageService.init(this._user.id, data.sasToken);
-    // Session stored tab-scoped only (expires on browser close)
-    sessionStorage.setItem("opsboard_session", JSON.stringify({ token: data.token, user: this._user, sasToken: data.sasToken }));
+    localStorage.setItem("opsboard_session", JSON.stringify({ token: data.token, user: this._user, sasToken: data.sasToken }));
     return this._user;
   },
 
   restoreSession() {
     try {
-      const raw = sessionStorage.getItem("opsboard_session");
+      const raw = localStorage.getItem("opsboard_session");
       if (!raw) return null;
       const { token, user, sasToken } = JSON.parse(raw);
       this._token = token; this._user = user;
@@ -272,7 +285,7 @@ const AuthService = {
   logout() {
     this._token = null; this._user = null;
     StorageService.init(null, null);
-    sessionStorage.removeItem("opsboard_session");
+    localStorage.removeItem("opsboard_session");
   },
 
   get user() { return this._user; },
