@@ -278,6 +278,17 @@ const AuthService = {
     return true;
   },
 
+  // ── Reset password ──────────────────────────────────────────────────────
+  async resetPassword(token, newPassword) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword }),
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return true;
+  },
+
   _apply(data, email) {
     this._token = data.token;
     const u     = data.user || {};
@@ -1315,33 +1326,58 @@ function NewTaskModal({ onAdd, onClose, settings, toast }) {
 
 // ── Login Page ─────────────────────────────────────────────────────────────
 function LoginPage({ onAuth, accentColor }) {
-  // mode: "login" | "register" | "forgot"
-  const [mode,setMode]       = useState("login");
+  // mode: "login" | "register" | "forgot" | "reset"
+  const [mode,setMode]       = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("reset") ? "reset" : "login";
+  });
+  const [resetToken]         = useState(() => new URLSearchParams(window.location.search).get("reset") || "");
   const [email,setEmail]     = useState("");
   const [password,setPass]   = useState("");
+  const [confirmPass,setCP]  = useState("");
   const [name,setName]       = useState("");
   const [showPass,setShowP]  = useState(false);
+  const [showCP,setShowCP]   = useState(false);
   const [error,setError]     = useState("");
   const [info,setInfo]       = useState("");
   const [loading,setLoad]    = useState(false);
   const [msalLoading,setML]  = useState(false);
 
-  const switchMode = m => { setMode(m); setError(""); setInfo(""); };
+  const switchMode = m => { setMode(m); setError(""); setInfo(""); setPass(""); setCP(""); };
 
-  // ── Email/password submit ────────────────────────────────────────────
+  // ── Submit handler ───────────────────────────────────────────────────
   const submit = async () => {
     setError(""); setInfo("");
+
+    if (mode==="reset") {
+      if (!password) { setError("Enter a new password."); return; }
+      if (password.length<8) { setError("Password must be at least 8 characters."); return; }
+      if (password!==confirmPass) { setError("Passwords do not match."); return; }
+      setLoad(true);
+      try {
+        await AuthService.resetPassword(resetToken, password);
+        setInfo("Password updated. You can now sign in.");
+        setPass(""); setCP("");
+        // Strip the token from the URL so a refresh doesn't re-trigger reset mode
+        window.history.replaceState({}, "", window.location.pathname);
+        setTimeout(() => switchMode("login"), 2000);
+      } catch(e) { setError(e.message); }
+      finally { setLoad(false); }
+      return;
+    }
+
     if (mode==="forgot") {
       if (!email) { setError("Enter your email address."); return; }
       setLoad(true);
       try {
         await AuthService.forgotPassword(email);
-        setInfo(`Reset link sent to ${email}. Check your inbox.`);
+        setInfo(`If an account exists for ${email}, a reset link has been sent.`);
         setEmail("");
       } catch(e) { setError(e.message); }
       finally { setLoad(false); }
       return;
     }
+
     if (!email||!password) { setError("Email and password are required."); return; }
     if (mode==="register"&&!name) { setError("Display name is required."); return; }
     if (mode==="register"&&password.length<8) { setError("Password must be at least 8 characters."); return; }
@@ -1397,21 +1433,18 @@ function LoginPage({ onAuth, accentColor }) {
         {/* Card */}
         <div className="rounded-2xl p-7" style={{background:"rgba(15,23,42,.8)",backdropFilter:"blur(16px)",border:"1px solid rgba(99,102,241,.18)",boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}>
 
-          {/* Mode toggle — only for login/register */}
-          {mode!=="forgot" && (
+          {/* Mode toggle — login/register only */}
+          {mode==="login" || mode==="register" ? (
             <div className="flex bg-slate-800/80 rounded-xl p-1 mb-6">
               {["login","register"].map(m=>(
                 <button key={m} onClick={()=>switchMode(m)}
-                  className="flex-1 py-1.5 rounded-lg text-sm font-medium transition-all capitalize"
+                  className="flex-1 py-1.5 rounded-lg text-sm font-medium transition-all"
                   style={mode===m?{background:accentColor,color:"#fff",boxShadow:`0 2px 8px ${accentColor}66`}:{color:"#64748b"}}>
                   {m==="login"?"Sign In":"Register"}
                 </button>
               ))}
             </div>
-          )}
-
-          {/* Back button — forgot mode */}
-          {mode==="forgot" && (
+          ) : (
             <button onClick={()=>switchMode("login")} className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm mb-5 transition-colors">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
               Back to sign in
@@ -1419,10 +1452,10 @@ function LoginPage({ onAuth, accentColor }) {
           )}
 
           <h2 className="text-white font-semibold text-base mb-1">
-            {mode==="login"?"Welcome back":mode==="register"?"Create your account":"Reset your password"}
+            {mode==="login"?"Welcome back":mode==="register"?"Create your account":mode==="reset"?"Set a new password":"Reset your password"}
           </h2>
           <p className="text-slate-500 text-xs mb-5">
-            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":"We'll send a reset link to your email."}
+            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":mode==="reset"?"Choose a strong password for your account.":"We'll send a reset link to your email."}
           </p>
 
           {/* Error / info banners */}
@@ -1438,66 +1471,117 @@ function LoginPage({ onAuth, accentColor }) {
           )}
 
           <div className="flex flex-col gap-4">
-            {/* Display name — register only */}
-            {mode==="register" && (
-              <div className="fade-in">
-                <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Display Name</label>
-                <input value={name} onChange={e=>setName(e.target.value)} autoFocus
-                  className={inputCls} placeholder="James Gallagher"/>
-              </div>
-            )}
-
-            {/* Email */}
-            <div>
-              <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Email</label>
-              <div className="relative">
-                <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-                  onKeyDown={e=>e.key==="Enter"&&submit()}
-                  autoFocus={mode==="login"||mode==="forgot"}
-                  className={inputCls+" pl-9"} placeholder="you@yourdomain.com"/>
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                </svg>
-              </div>
-            </div>
-
-            {/* Password — not shown on forgot */}
-            {mode!=="forgot" && (
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs text-slate-400 uppercase tracking-widest font-medium">Password</label>
-                  {mode==="login" && (
-                    <button onClick={()=>switchMode("forgot")}
-                      className="text-xs transition-colors hover:opacity-80" style={{color:accentColor}}>
-                      Forgot password?
+            {/* Reset mode — new password + confirm only */}
+            {mode==="reset" ? (
+              <>
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">New Password</label>
+                  <div className="relative">
+                    <input type={showPass?"text":"password"} value={password} autoFocus
+                      onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
+                      className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    <button type="button" onClick={()=>setShowP(p=>!p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
+                      {showPass?"Hide":"Show"}
                     </button>
+                  </div>
+                  {password.length>0 && (
+                    <div className="mt-2 fade-in">
+                      <div className="flex gap-1 mb-1">
+                        {[1,2,3,4].map(i=>(
+                          <div key={i} className="flex-1 h-1 rounded-full transition-all"
+                            style={{background:strength>=i?strengthColor:"#1e293b"}}/>
+                        ))}
+                      </div>
+                      <p className="text-xs" style={{color:strengthColor||"#64748b"}}>{strengthLabel}</p>
+                    </div>
                   )}
                 </div>
-                <div className="relative">
-                  <input type={showPass?"text":"password"} value={password}
-                    onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
-                    className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                  </svg>
-                  <button type="button" onClick={()=>setShowP(p=>!p)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
-                    {showPass?"Hide":"Show"}
-                  </button>
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Confirm Password</label>
+                  <div className="relative">
+                    <input type={showCP?"text":"password"} value={confirmPass}
+                      onChange={e=>setCP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
+                      className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    <button type="button" onClick={()=>setShowCP(p=>!p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
+                      {showCP?"Hide":"Show"}
+                    </button>
+                  </div>
+                  {confirmPass.length>0 && password!==confirmPass && (
+                    <p className="text-red-400 text-xs mt-1">Passwords do not match.</p>
+                  )}
                 </div>
-                {/* Password strength bar — register only */}
-                {mode==="register" && password.length>0 && (
-                  <div className="mt-2 fade-in">
-                    <div className="flex gap-1 mb-1">
-                      {[1,2,3,4].map(i=>(
-                        <div key={i} className="flex-1 h-1 rounded-full transition-all"
-                          style={{background:strength>=i?strengthColor:"#1e293b"}}/>
-                      ))}
-                    </div>
-                    <p className="text-xs" style={{color:strengthColor||"#64748b"}}>{strengthLabel}</p>
+              </>
+            ) : (
+              <>
+                {/* Display name — register only */}
+                {mode==="register" && (
+                  <div className="fade-in">
+                    <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Display Name</label>
+                    <input value={name} onChange={e=>setName(e.target.value)} autoFocus
+                      className={inputCls} placeholder="James Gallagher"/>
                   </div>
                 )}
-              </div>
+
+                {/* Email */}
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Email</label>
+                  <div className="relative">
+                    <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                      onKeyDown={e=>e.key==="Enter"&&submit()}
+                      autoFocus={mode==="login"||mode==="forgot"}
+                      className={inputCls+" pl-9"} placeholder="you@yourdomain.com"/>
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Password — not shown on forgot */}
+                {mode!=="forgot" && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs text-slate-400 uppercase tracking-widest font-medium">Password</label>
+                      {mode==="login" && (
+                        <button onClick={()=>switchMode("forgot")}
+                          className="text-xs transition-colors hover:opacity-80" style={{color:accentColor}}>
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input type={showPass?"text":"password"} value={password}
+                        onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
+                        className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
+                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                      </svg>
+                      <button type="button" onClick={()=>setShowP(p=>!p)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
+                        {showPass?"Hide":"Show"}
+                      </button>
+                    </div>
+                    {mode==="register" && password.length>0 && (
+                      <div className="mt-2 fade-in">
+                        <div className="flex gap-1 mb-1">
+                          {[1,2,3,4].map(i=>(
+                            <div key={i} className="flex-1 h-1 rounded-full transition-all"
+                              style={{background:strength>=i?strengthColor:"#1e293b"}}/>
+                          ))}
+                        </div>
+                        <p className="text-xs" style={{color:strengthColor||"#64748b"}}>{strengthLabel}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -1508,11 +1592,12 @@ function LoginPage({ onAuth, accentColor }) {
             {loading?"Please wait…"
               :mode==="login"?"Sign In →"
               :mode==="register"?"Create Account →"
+              :mode==="reset"?"Set New Password →"
               :"Send Reset Link →"}
           </button>
 
-          {/* Divider + Microsoft SSO — not shown on forgot */}
-          {mode!=="forgot" && (
+          {/* Divider + Microsoft SSO — not shown on forgot or reset */}
+          {mode!=="forgot" && mode!=="reset" && (
             <>
               <div className="flex items-center gap-3 my-4">
                 <div className="flex-1 h-px bg-slate-800"/>
