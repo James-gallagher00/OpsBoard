@@ -13,7 +13,19 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library/2.38.3/msal-browser.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;background:#0a0f1e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e2e8f0}
+    :root{
+      --bg-base:#0a0f1e;--bg-panel:#0d1424;--bg-card:rgba(15,23,42,.7);
+      --bg-input:rgba(30,41,59,.8);--bg-input-solid:#1e293b;
+      --border:#334155;--border-subtle:rgba(99,102,241,.15);
+      --text:#e2e8f0;--text-muted:#94a3b8;--text-faint:#64748b;
+    }
+    .theme-light{
+      --bg-base:#f1f5f9;--bg-panel:#ffffff;--bg-card:rgba(255,255,255,.85);
+      --bg-input:rgba(241,245,249,.9);--bg-input-solid:#f1f5f9;
+      --border:#cbd5e1;--border-subtle:rgba(99,102,241,.2);
+      --text:#0f172a;--text-muted:#475569;--text-faint:#94a3b8;
+    }
+    body{margin:0;background:var(--bg-base);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);transition:background 0.3s,color 0.3s}
     ::-webkit-scrollbar{width:5px;height:5px}
     ::-webkit-scrollbar-track{background:#0f172a}
     ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}
@@ -40,7 +52,7 @@
     .task-row:hover{background:#111827}
     .glow{box-shadow:0 0 20px rgba(99,102,241,.15)}
     .kanban-col{min-height:300px}
-    .glass{background:rgba(15,23,42,.7);backdrop-filter:blur(12px);border:1px solid rgba(99,102,241,.15)}
+    .glass{background:var(--bg-card);backdrop-filter:blur(12px);border:1px solid var(--border-subtle)}
     .pulse-dot{animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
     .kbd{display:inline-flex;align-items:center;justify-content:center;background:#1e293b;border:1px solid #334155;border-radius:4px;padding:1px 5px;font-size:10px;color:#94a3b8;font-family:monospace}
@@ -66,8 +78,27 @@ const DEFAULT_SETTINGS = {
   appName:"OpsBoard", domain:"", userName:"", initials:"",
   assignees:["Unassigned"],
   categories:["Vulnerability","Deployment","Security","Incident","Compliance","Infrastructure","Monitoring","Patch"],
-  accentColor:"#6366f1"
+  accentColor:"#6366f1",
+  theme:"dark",  // "dark" | "light"
+  // Task defaults
+  defaultPriority:"Medium",
+  defaultCategory:"Security",
+  defaultAssignee:"Unassigned",
+  // SLA thresholds (days)
+  slaCritical:1,
+  slaHigh:3,
+  slaMedium:7,
+  slaLow:14,
+  // Notifications
+  notifyOverdue:true,
+  notifyDueSoon:true,
+  dueSoonDays:3,
+  // Display
+  compactMode:false,
+  showCompletedTasks:true,
+  dateFormat:"dd/MM/yyyy",
 };
+const APP_VERSION = "1.1.0"; // bump this to trigger What's New on next login
 const SEED_TASKS = [];
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -431,7 +462,7 @@ function SearchBar({ value, onChange, onClose }) {
 }
 
 // ── TopNav ─────────────────────────────────────────────────────────────────
-function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSearch, showSearch, setShowSearch, storageMode, user, onLogout, onSettings, onDeleteData, onDeleteAccount }) {
+function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSearch, showSearch, setShowSearch, storageMode, user, onLogout, onSettings, onDeleteData, onDeleteAccount, onToggleTheme, isDark }) {
   const tabs = ["Dashboard","Backlog","Board","Incidents","Vulnerabilities"];
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef();
@@ -514,7 +545,7 @@ function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSe
                   {/* Dropdown menu */}
                   {profileOpen && (
                     <div className="absolute right-0 top-full mt-2 w-56 rounded-xl shadow-2xl z-50 overflow-hidden fade-in"
-                      style={{background:"rgba(15,23,42,0.98)",border:"1px solid rgba(99,102,241,0.2)",backdropFilter:"blur(16px)"}}>
+                      style={{background:"var(--bg-panel)",border:"1px solid rgba(99,102,241,0.2)",backdropFilter:"blur(16px)"}}>
 
                       {/* User info header */}
                       <div className="px-4 py-3 border-b border-slate-800">
@@ -532,6 +563,13 @@ function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSe
 
                       {/* Menu items */}
                       <div className="py-1.5">
+                        <button onClick={onToggleTheme}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800/80 hover:text-white transition-colors text-left">
+                          <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+                          </svg>
+                          {isDark ? "Switch to light mode" : "Switch to dark mode"}
+                        </button>
                         <button onClick={()=>{onSettings();setProfileOpen(false);}}
                           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800/80 hover:text-white transition-colors text-left">
                           <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -993,36 +1031,78 @@ function Vulnerabilities({ tasks, onSelect, selectedId }) {
 
 // ── Settings ───────────────────────────────────────────────────────────────
 function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClearTasks, toast }) {
-  const [draft,setDraft]     = useState({...settings});
+  const [draft,setDraft]     = useState({...DEFAULT_SETTINGS,...settings});
   const [newAssignee,setNA]  = useState("");
   const [newCategory,setNC]  = useState("");
   const [saved,setSaved]     = useState(false);
   const [section,setSection] = useState("General");
   const [confirm,setConfirm] = useState(null);
-  const fileRef=useRef();
-  const upd=(k,v)=>setDraft(d=>({...d,[k]:v}));
-  const addA=()=>{const v=newAssignee.trim();if(!v||draft.assignees.includes(v))return;upd("assignees",[...draft.assignees,v]);setNA("");};
-  const addC=()=>{const v=newCategory.trim();if(!v||draft.categories.includes(v))return;upd("categories",[...draft.categories,v]);setNC("");};
-  const save=()=>{onSave(draft);setSaved(true);toast("Settings saved","success");setTimeout(()=>setSaved(false),1500);};
-  const doExport=()=>{
-    const blob=new Blob([JSON.stringify({tasks,settings},null,2)],{type:"application/json"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="opsboard-backup.json";a.click();
+  const fileRef = useRef();
+
+  // Keep draft in sync if settings change externally
+  useEffect(()=>{ setDraft({...DEFAULT_SETTINGS,...settings}); },[settings]);
+
+  const upd = (k,v) => setDraft(d=>({...d,[k]:v}));
+  const addA = () => { const v=newAssignee.trim(); if(!v||draft.assignees.includes(v))return; upd("assignees",[...draft.assignees,v]); setNA(""); };
+  const addC = () => { const v=newCategory.trim(); if(!v||draft.categories.includes(v))return; upd("categories",[...draft.categories,v]); setNC(""); };
+  const save = () => { onSave(draft); setSaved(true); toast("Settings saved","success"); setTimeout(()=>setSaved(false),1500); };
+
+  const doExport = () => {
+    const blob = new Blob([JSON.stringify({tasks,settings},null,2)],{type:"application/json"});
+    const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="opsboard-backup.json"; a.click();
     toast("Backup exported","success");
   };
-  const doImport=e=>{
-    const file=e.target.files[0];if(!file)return;
-    const reader=new FileReader();
-    reader.onload=ev=>{try{const d=JSON.parse(ev.target.result);if(d.tasks)onImportTasks(d.tasks);if(d.settings)onSave(d.settings);toast("Import successful","success");}catch{toast("Invalid file format","error");}};
-    reader.readAsText(file);e.target.value="";
+  const doImport = e => {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if(d.tasks) onImportTasks(d.tasks);
+        if(d.settings) onSave(d.settings);
+        toast("Import successful","success");
+      } catch { toast("Invalid file format","error"); }
+    };
+    reader.readAsText(file); e.target.value="";
   };
-  const sections=["General","Team","Categories","Data","Keyboard Shortcuts"];
+
+  // Stats derived from tasks
+  const totalTasks   = tasks.length;
+  const doneTasks    = tasks.filter(t=>t.status==="Done").length;
+  const overdueTasks = tasks.filter(t=>t.status!=="Done"&&isOverdue(t.dueDate)).length;
+  const criticalOpen = tasks.filter(t=>t.priority==="Critical"&&t.status!=="Done").length;
+  const completionPct = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0;
+  const byCategory = settings.categories.map(c=>({ name:c, count:tasks.filter(t=>t.category===c).length })).filter(x=>x.count>0).sort((a,b)=>b.count-a.count);
+  const byAssignee = settings.assignees.map(a=>({ name:a, count:tasks.filter(t=>t.assignee===a&&t.status!=="Done").length })).filter(x=>x.count>0).sort((a,b)=>b.count-a.count);
+
+  const inputCls = "w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors";
+  const selectCls = "w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors";
+
+  const Toggle = ({value, onChange, label, desc}) => (
+    <div className="flex items-center justify-between py-3 border-b border-slate-800/60 last:border-0">
+      <div>
+        <div className="text-slate-200 text-sm">{label}</div>
+        {desc && <div className="text-slate-500 text-xs mt-0.5">{desc}</div>}
+      </div>
+      <button onClick={()=>onChange(!value)}
+        className="relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ml-4"
+        style={{background:value?draft.accentColor:"#1e293b"}}>
+        <span className="absolute top-0.5 transition-all w-4 h-4 rounded-full bg-white shadow"
+          style={{left:value?"calc(100% - 18px)":"2px"}}/>
+      </button>
+    </div>
+  );
+
+  const sections = ["General","Profile","Team","Categories","Task Defaults","Notifications","Stats","Data","Shortcuts"];
+
   return (
     <div className="fade-in flex h-full">
-      <div className="w-48 border-r border-slate-800/60 p-4 flex-shrink-0 bg-slate-900/40">
+      {/* Sidebar */}
+      <div className="w-48 border-r p-4 flex-shrink-0 overflow-y-auto" style="border-color:var(--border)">
         <div className="text-xs text-slate-500 uppercase tracking-wide mb-3">Settings</div>
         {sections.map(s=>(
           <button key={s} onClick={()=>setSection(s)}
-            className={`w-full text-left px-3 py-2 rounded-md text-sm mb-1 transition-colors ${section===s?"bg-slate-800 text-white":"text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"}`}>
+            className={`w-full text-left px-3 py-2 rounded-md text-sm mb-0.5 transition-colors ${section===s?"bg-slate-800 text-white":"text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"}`}>
             {s}
           </button>
         ))}
@@ -1034,25 +1114,27 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
           </button>
         </div>
       </div>
+
+      {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
+
+        {/* ── General ── */}
         {section==="General"&&(
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">General</h2>
-            <p className="text-slate-400 text-sm mb-5">App name, branding, and profile.</p>
+            <p className="text-slate-400 text-sm mb-5">App name, branding, and display preferences.</p>
             <div className="glass rounded-xl p-5 mb-4">
               <h3 className="text-slate-300 text-sm font-medium mb-4">Application</h3>
               <div className="mb-4">
                 <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">App Name</label>
-                <input value={draft.appName} onChange={e=>upd("appName",e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+                <input value={draft.appName} onChange={e=>upd("appName",e.target.value)} className={inputCls}/>
               </div>
               <div className="mb-4">
                 <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Custom Domain</label>
                 <div className="flex items-center bg-slate-800 border border-slate-700 rounded-md overflow-hidden focus-within:border-indigo-500 transition-colors">
                   <span className="pl-3 text-slate-500 text-sm select-none">https://</span>
                   <input value={draft.domain} onChange={e=>upd("domain",e.target.value.replace(/^https?:\/\//,""))}
-                    className="flex-1 bg-transparent text-white text-sm px-1 py-2 font-mono"
-                    placeholder="opsboard.yourdomain.com"/>
+                    className="flex-1 bg-transparent text-white text-sm px-1 py-2 font-mono" placeholder="yourboard.com"/>
                 </div>
               </div>
               <div>
@@ -1061,7 +1143,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
                   <input type="color" value={draft.accentColor} onChange={e=>upd("accentColor",e.target.value)}
                     className="w-10 h-10 rounded-md cursor-pointer border-0 bg-transparent"/>
                   <div className="flex gap-2 flex-wrap">
-                    {["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#22c55e","#06b6d4","#3b82f6"].map(c=>(
+                    {["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#22c55e","#06b6d4","#3b82f6","#f59e0b","#84cc16"].map(c=>(
                       <button key={c} onClick={()=>upd("accentColor",c)}
                         className={`w-6 h-6 rounded-full border-2 transition-all ${draft.accentColor===c?"border-white scale-110":"border-transparent"}`}
                         style={{background:c}}/>
@@ -1071,60 +1153,106 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
               </div>
             </div>
             <div className="glass rounded-xl p-5">
-              <h3 className="text-slate-300 text-sm font-medium mb-4">Profile</h3>
-              <div className="flex gap-4 mb-3">
-                <div className="flex-1">
-                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Display Name</label>
-                  <input value={draft.userName} onChange={e=>upd("userName",e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
-                </div>
-                <div className="w-28">
-                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Initials</label>
-                  <input value={draft.initials} onChange={e=>upd("initials",e.target.value.toUpperCase().slice(0,3))} maxLength={3}
-                    className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors text-center font-bold tracking-widest"/>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white" style={{background:draft.accentColor+"cc"}}>{draft.initials||"?"}</div>
-                <span className="text-slate-300 text-sm">{draft.userName||"Your name"}</span>
+              <h3 className="text-slate-300 text-sm font-medium mb-3">Display</h3>
+              <Toggle value={draft.compactMode} onChange={v=>upd("compactMode",v)} label="Compact mode" desc="Reduce spacing in task lists"/>
+              <Toggle value={draft.showCompletedTasks} onChange={v=>upd("showCompletedTasks",v)} label="Show completed tasks" desc="Include Done tasks in Backlog and Board views"/>
+              <Toggle value={draft.theme==="light"} onChange={v=>upd("theme",v?"light":"dark")} label="Light mode" desc="Switch between dark and light theme"/>
+              <div className="pt-3">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Date Format</label>
+                <select value={draft.dateFormat} onChange={e=>upd("dateFormat",e.target.value)} className={selectCls}>
+                  <option value="dd/MM/yyyy">DD/MM/YYYY (UK)</option>
+                  <option value="MM/dd/yyyy">MM/DD/YYYY (US)</option>
+                  <option value="yyyy-MM-dd">YYYY-MM-DD (ISO)</option>
+                </select>
               </div>
             </div>
           </div>
         )}
+
+        {/* ── Profile ── */}
+        {section==="Profile"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Profile</h2>
+            <p className="text-slate-400 text-sm mb-5">Your name, avatar, and personal preferences.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex items-center gap-4 mb-5 pb-5 border-b border-slate-800/60">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0"
+                  style={{background:draft.accentColor+"cc"}}>
+                  {draft.initials||"?"}
+                </div>
+                <div>
+                  <div className="text-white font-medium">{draft.userName||"Your name"}</div>
+                  <div className="text-slate-500 text-sm mt-0.5">{draft.initials||"--"} · {draft.appName}</div>
+                </div>
+              </div>
+              <div className="flex gap-4 mb-4">
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Display Name</label>
+                  <input value={draft.userName} onChange={e=>upd("userName",e.target.value)} className={inputCls} placeholder="Your name"/>
+                </div>
+                <div className="w-28">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Initials</label>
+                  <input value={draft.initials} onChange={e=>upd("initials",e.target.value.toUpperCase().slice(0,3))} maxLength={3}
+                    className={inputCls+" text-center font-bold tracking-widest"}/>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">Initials appear on your profile avatar in the top bar.</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Team ── */}
         {section==="Team"&&(
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">Team</h2>
             <p className="text-slate-400 text-sm mb-5">Manage assignees available on all tasks.</p>
-            <div className="glass rounded-xl p-5">
-              <div className="flex flex-col gap-2 mb-3">
-                {draft.assignees.map(a=>(
-                  <div key={a} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-slate-600 flex items-center justify-center text-xs text-white font-bold">{initials(a)}</div>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex flex-col gap-2 mb-4">
+                {draft.assignees.map((a,i)=>(
+                  <div key={a} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs text-white font-bold flex-shrink-0"
+                        style={{background:draft.accentColor+"99"}}>{initials(a)}</div>
                       <span className="text-slate-200 text-sm">{a}</span>
+                      {i===0&&<span className="text-xs text-slate-600 ml-1">(default)</span>}
                     </div>
-                    <button onClick={()=>upd("assignees",draft.assignees.filter(x=>x!==a))} className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                    {a!=="Unassigned"&&(
+                      <button onClick={()=>upd("assignees",draft.assignees.filter(x=>x!==a))}
+                        className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                    )}
                   </div>
                 ))}
               </div>
               <div className="flex gap-2">
                 <input value={newAssignee} onChange={e=>setNA(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addA()}
-                  placeholder="Add assignee…" className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+                  placeholder="Name or email…" className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
                 <button onClick={addA} className="px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90" style={{background:draft.accentColor}}>Add</button>
               </div>
             </div>
+            <div className="glass rounded-xl p-4">
+              <div className="text-xs text-slate-500">{draft.assignees.length} team member{draft.assignees.length!==1?"s":""} · Assignees appear in task dropdowns and quick filters.</div>
+            </div>
           </div>
         )}
+
+        {/* ── Categories ── */}
         {section==="Categories"&&(
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">Categories</h2>
-            <p className="text-slate-400 text-sm mb-5">Task categories for filters, detail panel, and dashboard.</p>
-            <div className="glass rounded-xl p-5">
-              <div className="flex flex-col gap-2 mb-3">
+            <p className="text-slate-400 text-sm mb-5">Task categories used for filters, views, and the dashboard.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex flex-col gap-2 mb-4">
                 {draft.categories.map(c=>(
-                  <div key={c} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2">
-                    <span className={`text-sm font-medium ${cc(c)}`}>{c}</span>
-                    <button onClick={()=>upd("categories",draft.categories.filter(x=>x!==c))} className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                  <div key={c} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:draft.accentColor}}/>
+                      <span className={`text-sm font-medium ${cc(c)}`}>{c}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-600">{tasks.filter(t=>t.category===c).length} tasks</span>
+                      <button onClick={()=>upd("categories",draft.categories.filter(x=>x!==c))}
+                        className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1134,66 +1262,214 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
                 <button onClick={addC} className="px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90" style={{background:draft.accentColor}}>Add</button>
               </div>
             </div>
-          </div>
-        )}
-        {section==="Data"&&(
-          <div className="fade-in max-w-lg">
-            <h2 className="text-white font-semibold text-lg mb-1">Data Management</h2>
-            <p className="text-slate-400 text-sm mb-5">Export, import, or reset board data.</p>
-            {[
-              {title:"Export",desc:"Download all tasks and settings as a JSON backup.",btn:"Export Backup (JSON)",act:doExport,danger:false},
-            ].map(item=>(
-              <div key={item.title} className="glass rounded-xl p-5 mb-3">
-                <h3 className="text-slate-300 text-sm font-medium mb-1">{item.title}</h3>
-                <p className="text-slate-500 text-xs mb-3">{item.desc}</p>
-                <button onClick={item.act} className="px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90" style={{background:draft.accentColor}}>{item.btn}</button>
-              </div>
-            ))}
-            <div className="glass rounded-xl p-5 mb-3">
-              <h3 className="text-slate-300 text-sm font-medium mb-1">Import</h3>
-              <p className="text-slate-500 text-xs mb-3">Restore from a JSON backup. Overwrites current data.</p>
-              <input ref={fileRef} type="file" accept=".json" onChange={doImport} className="hidden"/>
-              <button onClick={()=>fileRef.current.click()} className="px-4 py-2 rounded-md text-slate-200 text-sm font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700">Import from JSON</button>
-            </div>
-            <div className="glass rounded-xl p-5 mb-3">
-              <h3 className="text-slate-300 text-sm font-medium mb-1">Clear All Tasks</h3>
-              <p className="text-slate-500 text-xs mb-3">Permanently delete every task from the board. Cannot be undone.</p>
-              <button onClick={()=>setConfirm({title:"Clear all tasks?",message:"Every task will be permanently deleted.",confirmLabel:"Clear All",onConfirm:()=>{onResetTasks();setConfirm(null);toast("All tasks cleared","warn");}})}
-                className="px-4 py-2 rounded-md text-orange-300 text-sm font-medium bg-orange-950 hover:bg-orange-900 border border-orange-900">Clear Tasks</button>
-            </div>
-            <div className="glass rounded-xl p-5 mb-3">
-              <h3 className="text-slate-300 text-sm font-medium mb-1">Clear All Tasks</h3>
-              <p className="text-slate-500 text-xs mb-3">Permanently delete every task.</p>
-              <button onClick={()=>setConfirm({title:"Clear all tasks?",message:"Every task deleted permanently.",confirmLabel:"Delete All",onConfirm:()=>{onClearTasks();setConfirm(null);toast("All tasks cleared","error");}})}
-                className="px-4 py-2 rounded-md text-red-400 text-sm font-medium bg-red-950 hover:bg-red-900 border border-red-900">Clear All</button>
-            </div>
-            <div className="glass rounded-xl p-5">
-              <h3 className="text-slate-300 text-sm font-medium mb-2">Storage</h3>
-              <div className="flex gap-3 text-xs">
-                <div className="bg-slate-800 rounded-lg px-3 py-2"><div className="text-white font-bold">{tasks.length}</div><div className="text-slate-400">Tasks</div></div>
-                <div className="bg-slate-800 rounded-lg px-3 py-2"><div className="text-white font-bold">{(JSON.stringify({tasks,settings}).length/1024).toFixed(1)} KB</div><div className="text-slate-400">Size</div></div>
-              </div>
+            <div className="glass rounded-xl p-4">
+              <div className="text-xs text-slate-500">Incident and Vulnerability categories feed the dedicated tab views. Removing them hides those tabs.</div>
             </div>
           </div>
         )}
-        {section==="Keyboard Shortcuts"&&(
+
+        {/* ── Task Defaults ── */}
+        {section==="Task Defaults"&&(
           <div className="fade-in max-w-lg">
-            <h2 className="text-white font-semibold text-lg mb-1">Keyboard Shortcuts</h2>
-            <p className="text-slate-400 text-sm mb-5">Speed up your workflow.</p>
+            <h2 className="text-white font-semibold text-lg mb-1">Task Defaults</h2>
+            <p className="text-slate-400 text-sm mb-5">Pre-fill values when creating new tasks.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <h3 className="text-slate-300 text-sm font-medium mb-4">New Task Defaults</h3>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Default Priority</label>
+                <select value={draft.defaultPriority} onChange={e=>upd("defaultPriority",e.target.value)} className={selectCls}>
+                  {["Critical","High","Medium","Low"].map(p=><option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Default Category</label>
+                <select value={draft.defaultCategory} onChange={e=>upd("defaultCategory",e.target.value)} className={selectCls}>
+                  {draft.categories.map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Default Assignee</label>
+                <select value={draft.defaultAssignee} onChange={e=>upd("defaultAssignee",e.target.value)} className={selectCls}>
+                  {draft.assignees.map(a=><option key={a}>{a}</option>)}
+                </select>
+              </div>
+            </div>
             <div className="glass rounded-xl p-5">
-              {[
-                ["N","New task"],["/ or Ctrl+K","Open search"],["Esc","Close panel / dismiss"],
-                ["S","Go to Settings"],["B","Go to Backlog"],["D","Go to Dashboard"],
-                ["I","Go to Incidents"],["V","Go to Vulnerabilities"],
-              ].map(([key,desc])=>(
+              <h3 className="text-slate-300 text-sm font-medium mb-4">SLA Thresholds</h3>
+              <p className="text-slate-500 text-xs mb-4">Tasks without a due date will be considered overdue after this many days based on priority.</p>
+              {[["Critical","slaCritical"],["High","slaHigh"],["Medium","slaMedium"],["Low","slaLow"]].map(([label,key])=>(
                 <div key={key} className="flex items-center justify-between py-2.5 border-b border-slate-800/60 last:border-0">
-                  <span className="text-slate-300 text-sm">{desc}</span>
-                  <span className="kbd">{key}</span>
+                  <span className="text-slate-300 text-sm">{label}</span>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="1" max="365" value={draft[key]}
+                      onChange={e=>upd(key,parseInt(e.target.value)||1)}
+                      className="w-16 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-2 py-1 text-center focus:border-indigo-500 transition-colors"/>
+                    <span className="text-slate-500 text-xs">days</span>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
+
+        {/* ── Notifications ── */}
+        {section==="Notifications"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Notifications</h2>
+            <p className="text-slate-400 text-sm mb-5">Control what appears on your dashboard and badges.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <h3 className="text-slate-300 text-sm font-medium mb-3">Dashboard Alerts</h3>
+              <Toggle value={draft.notifyOverdue} onChange={v=>upd("notifyOverdue",v)} label="Overdue task alerts" desc="Show overdue banner on Dashboard"/>
+              <Toggle value={draft.notifyDueSoon} onChange={v=>upd("notifyDueSoon",v)} label="Due soon alerts" desc="Warn when tasks are approaching their due date"/>
+              {draft.notifyDueSoon&&(
+                <div className="pt-3 fade-in">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Due soon window</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="1" max="30" value={draft.dueSoonDays}
+                      onChange={e=>upd("dueSoonDays",parseInt(e.target.value)||1)}
+                      className="w-20 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-2 py-2 text-center focus:border-indigo-500 transition-colors"/>
+                    <span className="text-slate-400 text-sm">days before due date</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Stats ── */}
+        {section==="Stats"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Stats</h2>
+            <p className="text-slate-400 text-sm mb-5">Overview of your board health.</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {[
+                {label:"Total tasks",   value:totalTasks,     color:"text-indigo-400"},
+                {label:"Completed",     value:doneTasks,      color:"text-emerald-400"},
+                {label:"Overdue",       value:overdueTasks,   color:"text-red-400"},
+                {label:"Critical open", value:criticalOpen,   color:"text-pink-400"},
+              ].map(s=>(
+                <div key={s.label} className="glass rounded-xl p-4">
+                  <div className={`text-3xl font-bold ${s.color} mb-1`}>{s.value}</div>
+                  <div className="text-slate-400 text-xs">{s.label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-slate-300 text-sm font-medium">Completion rate</h3>
+                <span className="text-white font-bold text-lg">{completionPct}%</span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2">
+                <div className="h-2 rounded-full transition-all duration-700" style={{width:`${completionPct}%`,background:settings.accentColor}}/>
+              </div>
+            </div>
+            {byCategory.length>0&&(
+              <div className="glass rounded-xl p-5 mb-4">
+                <h3 className="text-slate-300 text-sm font-medium mb-3">Tasks by category</h3>
+                {byCategory.map(({name,count})=>(
+                  <div key={name} className="flex items-center gap-3 mb-2">
+                    <span className={`text-xs font-medium w-28 flex-shrink-0 ${cc(name)}`}>{name}</span>
+                    <div className="flex-1 bg-slate-800 rounded-full h-1.5">
+                      <div className="h-1.5 rounded-full" style={{width:`${(count/totalTasks)*100}%`,background:settings.accentColor}}/>
+                    </div>
+                    <span className="text-slate-400 text-xs w-6 text-right">{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {byAssignee.length>0&&(
+              <div className="glass rounded-xl p-5 mb-4">
+                <h3 className="text-slate-300 text-sm font-medium mb-3">Open tasks by assignee</h3>
+                {byAssignee.map(({name,count})=>(
+                  <div key={name} className="flex items-center gap-3 mb-2">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs text-white font-bold flex-shrink-0"
+                      style={{background:settings.accentColor+"99"}}>{initials(name)}</div>
+                    <span className="text-slate-300 text-xs flex-1 truncate">{name}</span>
+                    <span className="text-slate-400 text-xs">{count} open</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="glass rounded-xl p-4">
+              <div className="flex gap-4 text-xs">
+                <div><span className="text-white font-bold">{tasks.filter(t=>t.checklist?.length>0).length}</span><span className="text-slate-400 ml-1">tasks with checklists</span></div>
+                <div><span className="text-white font-bold">{(JSON.stringify({tasks,settings}).length/1024).toFixed(1)} KB</span><span className="text-slate-400 ml-1">total data size</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Data ── */}
+        {section==="Data"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Data Management</h2>
+            <p className="text-slate-400 text-sm mb-5">Export, import, or reset your board data.</p>
+            <div className="glass rounded-xl p-5 mb-3">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Export</h3>
+              <p className="text-slate-500 text-xs mb-3">Download all tasks and settings as a JSON backup file.</p>
+              <button onClick={doExport} className="px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90" style={{background:draft.accentColor}}>
+                Export Backup (JSON)
+              </button>
+            </div>
+            <div className="glass rounded-xl p-5 mb-3">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Import</h3>
+              <p className="text-slate-500 text-xs mb-3">Restore from a JSON backup. Overwrites all current tasks and settings.</p>
+              <input ref={fileRef} type="file" accept=".json" onChange={doImport} className="hidden"/>
+              <button onClick={()=>fileRef.current.click()} className="px-4 py-2 rounded-md text-slate-200 text-sm font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700">
+                Import from JSON
+              </button>
+            </div>
+            <div className="glass rounded-xl p-5 mb-3 border border-orange-900/40">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Clear All Tasks</h3>
+              <p className="text-slate-500 text-xs mb-3">Permanently delete every task. Settings are kept. Cannot be undone.</p>
+              <button onClick={()=>setConfirm({title:"Clear all tasks?",message:"Every task will be permanently deleted. Your settings will be kept.",confirmLabel:"Clear All Tasks",onConfirm:()=>{onClearTasks();setConfirm(null);toast("All tasks cleared","warn");}})}
+                className="px-4 py-2 rounded-md text-orange-300 text-sm font-medium bg-orange-950 hover:bg-orange-900 border border-orange-900">
+                Clear Tasks
+              </button>
+            </div>
+            <div className="glass rounded-xl p-5 border border-red-900/40">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Reset Everything</h3>
+              <p className="text-slate-500 text-xs mb-3">Delete all tasks and reset all settings to defaults. Cannot be undone.</p>
+              <button onClick={()=>setConfirm({title:"Reset everything?",message:"All tasks will be deleted and all settings reset to defaults. This cannot be undone.",confirmLabel:"Reset Everything",onConfirm:()=>{onClearTasks();onSave(DEFAULT_SETTINGS);setConfirm(null);toast("Board reset to defaults","error");}})}
+                className="px-4 py-2 rounded-md text-red-400 text-sm font-medium bg-red-950 hover:bg-red-900 border border-red-900">
+                Reset Everything
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Shortcuts ── */}
+        {section==="Shortcuts"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Keyboard Shortcuts</h2>
+            <p className="text-slate-400 text-sm mb-5">Speed up your workflow without touching the mouse.</p>
+            <div className="glass rounded-xl p-5">
+              {[
+                ["Navigation",""],
+                ["D","Go to Dashboard"],
+                ["B","Go to Backlog"],
+                ["I","Go to Incidents"],
+                ["V","Go to Vulnerabilities"],
+                ["S","Go to Settings"],
+                ["Tasks",""],
+                ["N","New task"],
+                ["Esc","Close panel / dismiss"],
+                ["Search",""],
+                ["/ or Ctrl+K","Open search"],
+                ["Esc","Close search"],
+              ].map(([key,desc])=> key&&!desc
+                ? <div key={key} className="text-xs text-slate-500 uppercase tracking-wide pt-4 pb-1 first:pt-0">{key}</div>
+                : (
+                  <div key={key+desc} className="flex items-center justify-between py-2.5 border-b border-slate-800/60 last:border-0">
+                    <span className="text-slate-300 text-sm">{desc}</span>
+                    <span className="kbd">{key}</span>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
       {confirm&&<ConfirmModal {...confirm} danger={true} accentColor={draft.accentColor} onCancel={()=>setConfirm(null)}/>}
     </div>
@@ -1237,17 +1513,21 @@ function DetailPanel({ task, onUpdate, onDelete, onClose, settings, toast }) {
   const db=dueBadge(dueDate);
 
   return (
-    <div className="w-80 flex-shrink-0 border-l border-slate-800/60 flex flex-col slide-in" style={{background:"#0d1424"}}>
+    <div className="w-80 flex-shrink-0 border-l border-slate-800/60 flex flex-col slide-in" style={{background:"var(--bg-panel)"}}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800/60 flex-shrink-0">
         <div className="flex gap-1">
-          {["detail","notes"].map(t=>(
-            <button key={t} onClick={()=>setTab(t)}
-              className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors capitalize ${tab===t?"text-white":"text-slate-500 hover:text-slate-300"}`}
-              style={tab===t?{background:settings.accentColor+"33",color:settings.accentColor}:{}}>
-              {t}{t==="notes"&&notes?"*":""}
-            </button>
-          ))}
+          {["detail","notes","time"].map(t=>{
+            const totalMins=(task.timeEntries||[]).reduce((s,e)=>s+e.minutes,0);
+            const fmtTotal=m=>{const h=Math.floor(m/60),mn=m%60;return h>0?`${h}h${mn>0?" "+mn+"m":""}`:mn+"m";};
+            return (
+              <button key={t} onClick={()=>setTab(t)}
+                className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors capitalize ${tab===t?"text-white":"text-slate-500 hover:text-slate-300"}`}
+                style={tab===t?{background:settings.accentColor+"33",color:settings.accentColor}:{}}>
+                {t==="notes"?(notes?"notes *":"notes"):t==="time"?(totalMins>0?`time (${fmtTotal(totalMins)})`:"time"):"detail"}
+              </button>
+            );
+          })}
         </div>
         <div className="flex items-center gap-1.5">
           <button onClick={()=>{navigator.clipboard?.writeText(`#${task.id} ${task.title}`);toast("Copied to clipboard","info");}}
@@ -1378,6 +1658,10 @@ function DetailPanel({ task, onUpdate, onDelete, onClose, settings, toast }) {
         </div>
       )}
 
+      {tab==="time"&&(
+        <TimeTracker task={task} onUpdate={onUpdate} settings={settings}/>
+      )}
+
       {confirmDelete&&(
         <ConfirmModal title="Delete task?" message={`"${task.title}" will be permanently removed.`}
           confirmLabel="Delete" danger={true} accentColor={settings.accentColor}
@@ -1393,9 +1677,9 @@ function NewTaskModal({ onAdd, onClose, settings, toast }) {
   const [title,setTitle]         = useState("");
   const [description,setDesc]    = useState("");
   const [status,setStatus]       = useState("Todo");
-  const [priority,setPriority]   = useState("Medium");
-  const [category,setCategory]   = useState(settings.categories[0]||"");
-  const [assignee,setAssignee]   = useState(settings.assignees[0]||"");
+  const [priority,setPriority]   = useState(settings.defaultPriority||"Medium");
+  const [category,setCategory]   = useState(settings.defaultCategory||settings.categories[0]||"");
+  const [assignee,setAssignee]   = useState(settings.defaultAssignee||settings.assignees[0]||"");
   const [dueDate,setDueDate]     = useState("");
 
   const add=()=>{
@@ -1534,7 +1818,7 @@ function LoginPage({ onAuth, accentColor }) {
   const inputCls = "w-full bg-slate-800/80 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 focus:border-indigo-500 transition-colors placeholder-slate-500";
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{background:"#0a0f1e"}}>
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{background:"var(--bg-base)"}}>
       {/* Background decoration */}
       <div style={{position:"fixed",inset:0,backgroundImage:"linear-gradient(rgba(99,102,241,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.03) 1px,transparent 1px)",backgroundSize:"48px 48px",pointerEvents:"none"}}/>
       <div style={{position:"fixed",top:"-20%",left:"50%",transform:"translateX(-50%)",width:"600px",height:"400px",background:"radial-gradient(ellipse,rgba(99,102,241,.1) 0%,transparent 70%)",pointerEvents:"none"}}/>
@@ -1896,6 +2180,222 @@ function Tutorial({ onComplete, accentColor, userName }) {
   );
 }
 
+
+// ── What's New Overlay ─────────────────────────────────────────────────────
+function WhatsNew({ onClose, accentColor }) {
+  const changes = [
+    {
+      icon: "⏱",
+      title: "Time tracking",
+      desc: "Log time directly on tasks. Start a live timer or add manual entries. Total time shows in the task header.",
+    },
+    {
+      icon: "☀",
+      title: "Light mode",
+      desc: "Toggle between dark and light mode in General settings. Your preference is saved automatically.",
+    },
+    {
+      icon: "⚙",
+      title: "Expanded settings",
+      desc: "New sections for Task Defaults, SLA thresholds, Notifications, and a Stats panel with board health metrics.",
+    },
+    {
+      icon: "👤",
+      title: "Profile dropdown",
+      desc: "Settings, data management, and sign out are now all in the profile menu in the top bar.",
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{background:"rgba(10,15,30,0.88)",backdropFilter:"blur(6px)"}}>
+      <div className="w-full max-w-md fade-in rounded-2xl overflow-hidden"
+        style={{background:"var(--bg-panel)",border:"1px solid rgba(99,102,241,0.2)",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b" style={{borderColor:"var(--border-subtle)"}}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold mb-1" style={{color:accentColor}}>VERSION 1.1.0</div>
+              <h2 className="text-lg font-semibold" style={{color:"var(--text)"}}>What's new in OpsBoard</h2>
+            </div>
+            <button onClick={onClose}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors"
+              style={{color:"var(--text-faint)",background:"var(--bg-input-solid)"}}>✕</button>
+          </div>
+        </div>
+        {/* Changes */}
+        <div className="px-6 py-4 flex flex-col gap-4">
+          {changes.map((c,i)=>(
+            <div key={i} className="flex gap-4">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                style={{background:`rgba(99,102,241,0.12)`,border:"1px solid rgba(99,102,241,0.2)"}}>
+                {c.icon}
+              </div>
+              <div>
+                <div className="text-sm font-semibold mb-0.5" style={{color:"var(--text)"}}>{c.title}</div>
+                <div className="text-xs leading-relaxed" style={{color:"var(--text-muted)"}}>{c.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Footer */}
+        <div className="px-6 pb-6 pt-2">
+          <button onClick={onClose}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+            style={{background:`linear-gradient(135deg,${accentColor},#818cf8)`}}>
+            Got it — let's go →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Time Tracker ───────────────────────────────────────────────────────────
+function TimeTracker({ task, onUpdate, settings }) {
+  const [entries, setEntries]   = useState(task.timeEntries||[]);
+  const [running, setRunning]   = useState(false);
+  const [startTs, setStartTs]   = useState(null);
+  const [elapsed, setElapsed]   = useState(0);
+  const [manualH, setManualH]   = useState("");
+  const [manualM, setManualM]   = useState("");
+  const [manualNote, setMNote]  = useState("");
+  const intervalRef = useRef();
+
+  useEffect(()=>{
+    setEntries(task.timeEntries||[]);
+    setRunning(false); setStartTs(null); setElapsed(0);
+    clearInterval(intervalRef.current);
+  },[task.id]);
+
+  useEffect(()=>{
+    if(running){
+      intervalRef.current = setInterval(()=>setElapsed(Math.floor((Date.now()-startTs)/1000)),1000);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return ()=>clearInterval(intervalRef.current);
+  },[running]);
+
+  const fmtSecs = s => {
+    const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+    return h>0?`${h}h ${m}m`:`${m}m ${sec}s`;
+  };
+  const fmtEntry = mins => {
+    const h=Math.floor(mins/60), m=mins%60;
+    return h>0?`${h}h ${m>0?m+"m":""}`:m+"m";
+  };
+
+  const totalMins = entries.reduce((s,e)=>s+e.minutes,0);
+
+  const startTimer = () => { setStartTs(Date.now()); setElapsed(0); setRunning(true); };
+  const stopTimer  = () => {
+    setRunning(false);
+    const mins = Math.max(1, Math.round(elapsed/60));
+    const newEntry = { id:Date.now(), minutes:mins, note:"Timer", date:today() };
+    const updated = [...entries, newEntry];
+    setEntries(updated);
+    onUpdate({...task, timeEntries:updated});
+    setElapsed(0);
+  };
+
+  const addManual = () => {
+    const h=parseInt(manualH)||0, m=parseInt(manualM)||0;
+    const total=h*60+m;
+    if(total<=0) return;
+    const newEntry = { id:Date.now(), minutes:total, note:manualNote.trim()||"Manual entry", date:today() };
+    const updated = [...entries, newEntry];
+    setEntries(updated); onUpdate({...task,timeEntries:updated});
+    setManualH(""); setManualM(""); setMNote("");
+  };
+
+  const removeEntry = id => {
+    const updated = entries.filter(e=>e.id!==id);
+    setEntries(updated); onUpdate({...task,timeEntries:updated});
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4">
+      {/* Total */}
+      <div className="rounded-xl p-4 mb-4 flex items-center justify-between"
+        style={{background:`rgba(99,102,241,0.08)`,border:"1px solid rgba(99,102,241,0.15)"}}>
+        <div>
+          <div className="text-xs mb-0.5" style={{color:"var(--text-faint)"}}>Total logged</div>
+          <div className="text-2xl font-bold" style={{color:"var(--text)"}}>{fmtEntry(totalMins)||"0m"}</div>
+        </div>
+        <div className="text-xs" style={{color:"var(--text-faint)"}}>{entries.length} entr{entries.length===1?"y":"ies"}</div>
+      </div>
+
+      {/* Live timer */}
+      <div className="glass rounded-xl p-4 mb-4">
+        <div className="text-xs uppercase tracking-wide mb-3" style={{color:"var(--text-faint)"}}>Live timer</div>
+        {running&&(
+          <div className="text-2xl font-bold text-center mb-3 font-mono" style={{color:settings.accentColor}}>
+            {fmtSecs(elapsed)}
+          </div>
+        )}
+        <button
+          onClick={running?stopTimer:startTimer}
+          className="w-full py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90"
+          style={{background:running?"#ef4444":settings.accentColor}}>
+          {running?"Stop & Save":"Start Timer"}
+        </button>
+      </div>
+
+      {/* Manual entry */}
+      <div className="glass rounded-xl p-4 mb-4">
+        <div className="text-xs uppercase tracking-wide mb-3" style={{color:"var(--text-faint)"}}>Log time manually</div>
+        <div className="flex gap-2 mb-2">
+          <div className="flex-1">
+            <label className="text-xs mb-1 block" style={{color:"var(--text-faint)"}}>Hours</label>
+            <input type="number" min="0" max="24" value={manualH} onChange={e=>setManualH(e.target.value)}
+              className="w-full rounded-lg px-2 py-1.5 text-sm text-center border focus:outline-none focus:border-indigo-500"
+              style={{background:"var(--bg-input-solid)",borderColor:"var(--border)",color:"var(--text)"}}
+              placeholder="0"/>
+          </div>
+          <div className="flex-1">
+            <label className="text-xs mb-1 block" style={{color:"var(--text-faint)"}}>Minutes</label>
+            <input type="number" min="0" max="59" value={manualM} onChange={e=>setManualM(e.target.value)}
+              className="w-full rounded-lg px-2 py-1.5 text-sm text-center border focus:outline-none focus:border-indigo-500"
+              style={{background:"var(--bg-input-solid)",borderColor:"var(--border)",color:"var(--text)"}}
+              placeholder="30"/>
+          </div>
+        </div>
+        <input value={manualNote} onChange={e=>setMNote(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addManual()}
+          className="w-full rounded-lg px-2 py-1.5 text-xs border mb-2 focus:outline-none focus:border-indigo-500"
+          style={{background:"var(--bg-input-solid)",borderColor:"var(--border)",color:"var(--text)"}}
+          placeholder="Note (optional)"/>
+        <button onClick={addManual}
+          className="w-full py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-all"
+          style={{background:settings.accentColor}}>Add Entry</button>
+      </div>
+
+      {/* Log */}
+      {entries.length>0&&(
+        <div className="glass rounded-xl p-4">
+          <div className="text-xs uppercase tracking-wide mb-3" style={{color:"var(--text-faint)"}}>Log</div>
+          <div className="flex flex-col gap-2">
+            {[...entries].reverse().map(e=>(
+              <div key={e.id} className="flex items-center justify-between group">
+                <div>
+                  <span className="text-sm font-medium" style={{color:"var(--text)"}}>{fmtEntry(e.minutes)}</span>
+                  <span className="text-xs ml-2" style={{color:"var(--text-faint)"}}>{e.note}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={{color:"var(--text-faint)"}}>{e.date}</span>
+                  <button onClick={()=>removeEntry(e.id)}
+                    className="opacity-0 group-hover:opacity-100 text-xs transition-all hover:text-red-400"
+                    style={{color:"var(--text-faint)"}}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 function App() {
   // auth states: "loading" | "unauthenticated" | "authenticated"
@@ -1913,6 +2413,12 @@ function App() {
   const { toasts, toast, dismiss } = useToast();
   const [showTutorial, setShowTutorial] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+
+  // Apply theme class to document root
+  useEffect(()=>{
+    document.documentElement.classList.toggle("theme-light", settings.theme==="light");
+  }, [settings.theme]);
 
   // ── Bootstrap ────────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -1984,7 +2490,13 @@ function App() {
     if (t.length===0 && !mergedSettings.userName) {
       setShowTutorial(true);
     } else {
-      toast(`Welcome back, ${u.name.split(" ")[0]}!`,"success");
+      // Show What's New if this version hasn't been seen
+      const seenVersion = localStorage.getItem("opsboard_seen_version");
+      if (seenVersion !== APP_VERSION) {
+        setShowWhatsNew(true);
+      } else {
+        toast(`Welcome back, ${u.name.split(" ")[0]}!`,"success");
+      }
     }
   };
   const handleLogout = () => {
@@ -2004,7 +2516,7 @@ function App() {
 
   // ── Render: loading ──────────────────────────────────────────────────────
   if (authState==="loading") return (
-    <div className="min-h-screen flex items-center justify-center" style={{background:"#0a0f1e"}}>
+    <div className="min-h-screen flex items-center justify-center" style={{background:"var(--bg-base)"}}>
       <div className="flex flex-col items-center gap-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{background:DEFAULT_SETTINGS.accentColor}}>
           <svg width="20" height="20" viewBox="0 0 14 14" fill="none">
@@ -2026,11 +2538,13 @@ function App() {
 
   // ── Render: main app ─────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{background:"#0a0f1e"}}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{background:"var(--bg-base)"}}>
       <TopNav activeTab={activeTab} setActiveTab={switchTab} onNew={()=>setShowNew(true)}
         settings={settings} tasks={tasks} search={search} setSearch={setSearch}
         showSearch={showSearch} setShowSearch={setShowSearch}
         storageMode={storageMode} user={user} onLogout={handleLogout}
+        isDark={settings.theme!=="light"}
+        onToggleTheme={()=>saveSettings({...settings,theme:settings.theme==="light"?"dark":"light"})}
         onSettings={()=>switchTab("Settings")}
         onDeleteData={()=>setConfirmDialog({
           title:"Clear all data?",
@@ -2070,6 +2584,7 @@ function App() {
       </div>
       {showNew&&<NewTaskModal onAdd={add} onClose={()=>setShowNew(false)} settings={settings} toast={toast}/>}
       {showTutorial&&<Tutorial onComplete={()=>{setShowTutorial(false);toast(`Welcome to OpsBoard!`,"success");}} accentColor={settings.accentColor} userName={user?.name}/>}
+      {showWhatsNew&&<WhatsNew accentColor={settings.accentColor} onClose={()=>{localStorage.setItem("opsboard_seen_version",APP_VERSION);setShowWhatsNew(false);toast("You're on v1.1.0","success");}}/>}
       {confirmDialog&&<ConfirmModal title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} danger={confirmDialog.danger} onConfirm={confirmDialog.onConfirm} onCancel={()=>setConfirmDialog(null)} accentColor={settings.accentColor}/>}
       <ToastContainer toasts={toasts} dismiss={dismiss}/>
     </div>
