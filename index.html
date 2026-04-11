@@ -385,8 +385,30 @@ function SearchBar({ value, onChange, onClose }) {
 }
 
 // ── TopNav ─────────────────────────────────────────────────────────────────
-function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSearch, showSearch, setShowSearch, storageMode, user, onLogout }) {
-  const tabs = ["Dashboard","Backlog","Board","Incidents","Vulnerabilities","Settings"];
+function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSearch, showSearch, setShowSearch, storageMode, user, onLogout, onSettings, onDeleteData, onDeleteAccount }) {
+  const tabs = ["Dashboard","Backlog","Board","Incidents","Vulnerabilities"];
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef();
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = e => { if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Derive initials from user display name, fall back to settings.initials
+  const nameInitials = (() => {
+    const src = user?.name || settings.userName || "";
+    const parts = src.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length-1][0]).toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0,2).toUpperCase();
+    return settings.initials || "?";
+  })();
+
+  const displayName = user?.name || settings.userName || "Account";
+  const displayEmail = user?.email || "";
+
   const badgeCount = tab => {
     if (tab==="Incidents") return tasks.filter(t=>t.category==="Incident"&&t.status!=="Done").length;
     if (tab==="Vulnerabilities") return tasks.filter(t=>t.category==="Vulnerability"&&t.status!=="Done").length;
@@ -394,6 +416,7 @@ function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSe
     if (tab==="Dashboard" && overdue>0) return overdue;
     return 0;
   };
+
   return (
     <nav className="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur select-none flex-shrink-0 z-40">
       {/* Top bar: logo + controls */}
@@ -422,27 +445,89 @@ function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSe
                   className="p-1.5 rounded-md text-slate-400 hover:text-white transition-colors" title="Search (/)">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 </button>
-                {activeTab!=="Settings" &&
-                  <button onClick={onNew}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-white text-sm font-medium hover:opacity-90 transition-all shadow-lg"
-                    style={{background:settings.accentColor}} title="New Task (N)">
-                    <span className="text-base leading-none">+</span>
-                    <span className="hidden sm:inline"> New Task</span>
-                  </button>
-                }
+                <button onClick={onNew}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-white text-sm font-medium hover:opacity-90 transition-all shadow-lg"
+                  style={{background:settings.accentColor}} title="New Task (N)">
+                  <span className="text-base leading-none">+</span>
+                  <span className="hidden sm:inline"> New Task</span>
+                </button>
                 {storageMode && <StorageBadge mode={storageMode}/>}
-                <div className="flex items-center gap-1.5">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{background:settings.accentColor+"cc"}}>
-                    {settings.initials}
-                  </div>
-                  <span className="hidden md:inline text-sm text-slate-300">{settings.userName}</span>
-                </div>
-                {onLogout && user?.id !== "local" && (
-                  <button onClick={onLogout} title="Sign out"
-                    className="text-slate-600 hover:text-slate-300 text-xs px-2 py-1 rounded hover:bg-slate-800 transition-colors">
-                    Sign out
+
+                {/* Profile dropdown */}
+                <div className="relative" ref={profileRef}>
+                  <button onClick={()=>setProfileOpen(o=>!o)}
+                    className="flex items-center gap-1.5 rounded-full transition-all hover:ring-2 hover:ring-offset-2 hover:ring-offset-slate-900 focus:outline-none"
+                    style={profileOpen?{ringColor:settings.accentColor}:{}}
+                    title={displayName}>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 transition-all"
+                      style={{background:settings.accentColor+"cc", boxShadow: profileOpen ? `0 0 0 2px ${settings.accentColor}` : "none"}}>
+                      {nameInitials}
+                    </div>
                   </button>
-                )}
+
+                  {/* Dropdown menu */}
+                  {profileOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl shadow-2xl z-50 overflow-hidden fade-in"
+                      style={{background:"rgba(15,23,42,0.98)",border:"1px solid rgba(99,102,241,0.2)",backdropFilter:"blur(16px)"}}>
+
+                      {/* User info header */}
+                      <div className="px-4 py-3 border-b border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                            style={{background:settings.accentColor+"cc"}}>
+                            {nameInitials}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-white text-sm font-medium truncate">{displayName}</div>
+                            {displayEmail && <div className="text-slate-500 text-xs truncate">{displayEmail}</div>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Menu items */}
+                      <div className="py-1.5">
+                        <button onClick={()=>{onSettings();setProfileOpen(false);}}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800/80 hover:text-white transition-colors text-left">
+                          <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                          </svg>
+                          Settings
+                        </button>
+
+                        <div className="mx-3 my-1.5 border-t border-slate-800"/>
+
+                        <button onClick={()=>{onDeleteData();setProfileOpen(false);}}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-orange-400 hover:bg-orange-950/40 transition-colors text-left">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                          </svg>
+                          Clear all data
+                        </button>
+
+                        {user?.id !== "local" && (<>
+                          <button onClick={()=>{onDeleteAccount();setProfileOpen(false);}}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-950/40 transition-colors text-left">
+                            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6"/>
+                            </svg>
+                            Delete account
+                          </button>
+
+                          <div className="mx-3 my-1.5 border-t border-slate-800"/>
+
+                          <button onClick={()=>{onLogout();setProfileOpen(false);}}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-white transition-colors text-left">
+                            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                            </svg>
+                            Sign out
+                          </button>
+                        </>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
           }
         </div>
@@ -1778,6 +1863,7 @@ function App() {
   const [showSearch,setShowSearch] = useState(false);
   const { toasts, toast, dismiss } = useToast();
   const [showTutorial, setShowTutorial] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   // ── Bootstrap ────────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -1895,7 +1981,23 @@ function App() {
       <TopNav activeTab={activeTab} setActiveTab={switchTab} onNew={()=>setShowNew(true)}
         settings={settings} tasks={tasks} search={search} setSearch={setSearch}
         showSearch={showSearch} setShowSearch={setShowSearch}
-        storageMode={storageMode} user={user} onLogout={handleLogout}/>
+        storageMode={storageMode} user={user} onLogout={handleLogout}
+        onSettings={()=>switchTab("Settings")}
+        onDeleteData={()=>setConfirmDialog({
+          title:"Clear all data?",
+          message:"This will permanently delete all your tasks and reset your settings. This cannot be undone.",
+          confirmLabel:"Clear everything",
+          danger:true,
+          onConfirm:()=>{ setTasks([]); saveSettings(DEFAULT_SETTINGS); setConfirmDialog(null); toast("All data cleared","warn"); }
+        })}
+        onDeleteAccount={()=>setConfirmDialog({
+          title:"Delete account?",
+          message:"Your account and all associated data will be permanently deleted. You will be signed out immediately. This cannot be undone.",
+          confirmLabel:"Delete my account",
+          danger:true,
+          onConfirm:()=>{ handleLogout(); toast("Account deleted","error"); setConfirmDialog(null); }
+        })}
+      />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           {showSearch
@@ -1919,6 +2021,7 @@ function App() {
       </div>
       {showNew&&<NewTaskModal onAdd={add} onClose={()=>setShowNew(false)} settings={settings} toast={toast}/>}
       {showTutorial&&<Tutorial onComplete={()=>{setShowTutorial(false);toast(`Welcome to OpsBoard!`,"success");}} accentColor={settings.accentColor} userName={user?.name}/>}
+      {confirmDialog&&<ConfirmModal title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} danger={confirmDialog.danger} onConfirm={confirmDialog.onConfirm} onCancel={()=>setConfirmDialog(null)} accentColor={settings.accentColor}/>}
       <ToastContainer toasts={toasts} dismiss={dismiss}/>
     </div>
   );
