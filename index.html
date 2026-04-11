@@ -212,13 +212,33 @@ const AuthService = {
   _token: null,
   _user:  null,
 
+  // Extracts a human-friendly message from an API error response.
+  // API returns { error: "..." }, fallback to status-based messages.
+  async _parseError(res) {
+    const statusMessages = {
+      400: "Please check your details and try again.",
+      401: "Incorrect email or password.",
+      403: "You don't have permission to do that.",
+      404: "Account not found.",
+      409: "An account with this email already exists.",
+      429: "Too many attempts. Please wait a moment and try again.",
+      500: "Something went wrong on our end. Please try again shortly.",
+    };
+    try {
+      const body = await res.json();
+      return body.error || body.message || statusMessages[res.status] || "Something went wrong. Please try again.";
+    } catch {
+      return statusMessages[res.status] || "Something went wrong. Please try again.";
+    }
+  },
+
   async login(email, password) {
     const res = await fetch(`${AZURE.functionsUrl}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Login failed (${res.status})`); }
+    if (!res.ok) throw new Error(await this._parseError(res));
     return this._apply(await res.json(), email);
   },
 
@@ -228,16 +248,14 @@ const AuthService = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password, name: displayName }),
     });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Registration failed (${res.status})`); }
+    if (!res.ok) throw new Error(await this._parseError(res));
     return this._apply(await res.json(), email);
   },
 
   // ── Microsoft SSO ──────────────────────────────────────────────────────
-  // Opens a popup for Azure AD sign-in, then exchanges the ID token with
-  // your Azure Function at POST /auth/microsoft → { token, userId, displayName, sasToken }
   async msalLogin() {
     const msal = getMsal();
-    if (!msal) throw new Error("Microsoft SSO not configured. Add clientId and tenantId to AZURE config.");
+    if (!msal) throw new Error("Microsoft sign-in is not configured for this app.");
     await msal.initialize();
     const result = await msal.loginPopup({ scopes: ["openid","profile","email"] });
     const res = await fetch(`${AZURE.functionsUrl}/auth/microsoft`, {
@@ -245,20 +263,18 @@ const AuthService = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken: result.idToken }),
     });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Microsoft login failed (${res.status})`); }
+    if (!res.ok) throw new Error(await this._parseError(res));
     return this._apply(await res.json(), result.account.username);
   },
 
   // ── Forgot password ────────────────────────────────────────────────────
-  // Calls POST /auth/forgot-password → your Function sends a reset email.
-  // Function accepts: { email }  — no response body required beyond 200 OK.
   async forgotPassword(email) {
     const res = await fetch(`${AZURE.functionsUrl}/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
     });
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message||`Request failed (${res.status})`); }
+    if (!res.ok) throw new Error(await this._parseError(res));
     return true;
   },
 
