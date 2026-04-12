@@ -1,0 +1,2917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpsBoard</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%236366f1'/><rect x='1' y='1' width='6' height='6' rx='1' fill='white' opacity='0.9'/><rect x='9' y='1' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='1' y='9' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='9' y='9' width='6' height='6' rx='1' fill='white' opacity='0.9'/></svg>"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- MSAL.js — Microsoft Authentication Library for browser-based SSO -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library/2.38.3/msal-browser.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <style>
+    *{box-sizing:border-box}
+    :root{
+      --bg-base:#0a0f1e;--bg-panel:#0d1424;--bg-card:rgba(15,23,42,.7);
+      --bg-input:rgba(30,41,59,.8);--bg-input-solid:#1e293b;
+      --border:#334155;--border-subtle:rgba(99,102,241,.15);
+      --text:#e2e8f0;--text-muted:#94a3b8;--text-faint:#64748b;
+    }
+    .theme-light{
+      --bg-base:#f1f5f9;--bg-panel:#ffffff;--bg-card:rgba(255,255,255,.85);
+      --bg-input:rgba(241,245,249,.9);--bg-input-solid:#f1f5f9;
+      --border:#cbd5e1;--border-subtle:rgba(99,102,241,.2);
+      --text:#0f172a;--text-muted:#475569;--text-faint:#94a3b8;
+    }
+    body{margin:0;background:var(--bg-base);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);transition:background 0.3s,color 0.3s}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-track{background:#0f172a}
+    ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}
+    ::-webkit-scrollbar-thumb:hover{background:#334155}
+    textarea:focus,input:focus,select:focus{outline:none}
+    .badge-critical{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d}
+    .badge-high{background:#431407;color:#fdba74;border:1px solid #7c2d12}
+    .badge-medium{background:#1c1917;color:#d6d3d1;border:1px solid #44403c}
+    .badge-low{background:#0c4a6e;color:#7dd3fc;border:1px solid #075985}
+    .status-todo{background:#1e293b;color:#94a3b8;border:1px solid #334155}
+    .status-inprogress{background:#1e3a5f;color:#93c5fd;border:1px solid #1d4ed8}
+    .status-review{background:#2e1065;color:#c4b5fd;border:1px solid #6d28d9}
+    .status-blocked{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d}
+    .status-done{background:#052e16;color:#86efac;border:1px solid #166534}
+    .overdue{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d}
+    .due-soon{background:#431407;color:#fdba74;border:1px solid #7c2d12}
+    .fade-in{animation:fadeIn .15s ease-in}
+    .slide-in{animation:slideIn .2s ease-out}
+    .toast-slide{animation:toastIn .25s ease-out}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes toastIn{from{opacity:0;transform:translateX(120%)}to{opacity:1;transform:translateX(0)}}
+    .task-row{transition:background .1s}
+    .task-row:hover{background:#111827}
+    .glow{box-shadow:0 0 20px rgba(99,102,241,.15)}
+    .kanban-col{min-height:300px}
+    .glass{background:var(--bg-card);backdrop-filter:blur(12px);border:1px solid var(--border-subtle)}
+    .pulse-dot{animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    .kbd{display:inline-flex;align-items:center;justify-content:center;background:#1e293b;border:1px solid #334155;border-radius:4px;padding:1px 5px;font-size:10px;color:#94a3b8;font-family:monospace}
+    .search-highlight{background:rgba(99,102,241,.3);border-radius:2px}
+    input[type=search]::-webkit-search-cancel-button{display:none}
+    .progress-ring{transform:rotate(-90deg)}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const STATUSES   = ["Todo","In Progress","Review","Blocked","Done"];
+const PRIORITIES = ["Critical","High","Medium","Low"];
+const CAT_COLORS = {
+  Vulnerability:"text-red-400",Deployment:"text-blue-400",Security:"text-purple-400",
+  Incident:"text-orange-400",Compliance:"text-yellow-400",Infrastructure:"text-cyan-400",
+  Monitoring:"text-emerald-400",Patch:"text-pink-400"
+};
+const DEFAULT_SETTINGS = {
+  appName:"OpsBoard", domain:"", userName:"", initials:"",
+  assignees:["Unassigned"],
+  categories:["Vulnerability","Deployment","Security","Incident","Compliance","Infrastructure","Monitoring","Patch"],
+  accentColor:"#6366f1",
+  theme:"dark",  // "dark" | "light"
+  // Task defaults
+  defaultPriority:"Medium",
+  defaultCategory:"Security",
+  defaultAssignee:"Unassigned",
+  // SLA thresholds (days)
+  slaCritical:1,
+  slaHigh:3,
+  slaMedium:7,
+  slaLow:14,
+  // Notifications
+  notifyOverdue:true,
+  notifyDueSoon:true,
+  dueSoonDays:3,
+  // Display
+  compactMode:false,
+  showCompletedTasks:true,
+  dateFormat:"dd/MM/yyyy",
+};
+const APP_VERSION = "1.1.0"; // bump this to trigger What's New on next login
+const SEED_TASKS = [];
+
+// ══════════════════════════════════════════════════════════════════════════
+// ██  AZURE CONFIGURATION  — fill in your values here
+// ══════════════════════════════════════════════════════════════════════════
+// ── Runtime config — fetched from /api/config on load ──────────────────────
+// The only hardcoded value is the Functions base URL, needed to fetch config.
+// Everything else (storage account, AAD IDs) comes from the server so they
+// are never exposed in the HTML source.
+const FUNCTIONS_BASE = "https://opsboardlogic.azurewebsites.net/api";
+
+const AZURE = {
+  functionsUrl:     FUNCTIONS_BASE,
+  storageAccount:   null,
+  storageContainer: "opsboard-data",
+  clientId:         null,
+  tenantId:         null,
+};
+
+// Populated once by loadConfig() below
+let _configLoaded = false;
+let _configLoading = null;
+
+const loadConfig = () => {
+  if (_configLoaded) return Promise.resolve();
+  if (_configLoading) return _configLoading;
+  _configLoading = fetch(`${FUNCTIONS_BASE}/config`)
+    .then(r => r.json())
+    .then(cfg => {
+      if (cfg.functionsUrl)     AZURE.functionsUrl     = cfg.functionsUrl;
+      if (cfg.storageAccount)   AZURE.storageAccount   = cfg.storageAccount;
+      if (cfg.storageContainer) AZURE.storageContainer = cfg.storageContainer;
+      if (cfg.clientId)         AZURE.clientId         = cfg.clientId;
+      if (cfg.tenantId)         AZURE.tenantId         = cfg.tenantId;
+      _configLoaded = true;
+    })
+    .catch(() => {
+      // If config fetch fails, app continues — values stay null and
+      // azureConfigured() returns false, falling back to local mode
+      _configLoaded = true;
+    });
+  return _configLoading;
+};
+
+const azureConfigured = () =>
+  !!AZURE.functionsUrl && !!AZURE.storageAccount;
+const msalConfigured = () => {
+  if (typeof msal === "undefined") return false;
+  return !!AZURE.clientId && !!AZURE.tenantId;
+};
+
+// MSAL instance — created lazily on first Microsoft sign-in attempt
+let _msalInstance = null;
+let _msalInitialised = false;
+const getMsal = () => {
+  if (_msalInstance) return _msalInstance;
+  if (!msalConfigured()) return null;
+  // Use origin only — path causes redirect_uri_mismatch if App Registration
+  // has the root URL registered (which is the standard setup)
+  const redirectUri = window.location.origin + '/';
+  _msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: AZURE.clientId,
+      authority: `https://login.microsoftonline.com/${AZURE.tenantId}`,
+      redirectUri,
+      navigateToLoginRequestUrl: false,
+    },
+    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true },
+    system: {
+      loggerOptions: {
+        loggerCallback: (level, message, containsPii) => {
+          if (!containsPii) console.log('[MSAL]', message);
+        },
+        logLevel: msal.LogLevel?.Warning ?? 2,
+      },
+    },
+  });
+  return _msalInstance;
+};
+
+const initialiseMsal = async () => {
+  const instance = getMsal();
+  if (!instance) return null;
+  if (!_msalInitialised) {
+    await instance.initialize();
+    _msalInitialised = true;
+    // Handle any redirect response (in case popup was blocked and fell back)
+    await instance.handleRedirectPromise().catch(() => {});
+  }
+  return instance;
+};
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Storage Service ────────────────────────────────────────────────────────
+// Writes/reads JSON blobs to Azure Blob Storage using a per-user SAS token.
+// Falls back to localStorage automatically if Azure is unreachable or not configured.
+const StorageService = {
+  _sasToken: null,
+  _userId:   null,
+  _mode:     "local", // "azure" | "local" | "memory"
+
+  init(userId, sasToken) {
+    this._userId   = userId;
+    this._sasToken = sasToken;
+    this._mode     = (userId && sasToken && azureConfigured()) ? "azure" : "local";
+  },
+
+  _url(key) {
+    // Blob path: {container}/{userId}/{key}.json?{sasToken}
+    return `https://${AZURE.storageAccount}.blob.core.windows.net/${AZURE.storageContainer}/${this._userId}/${key}.json?${this._sasToken}`;
+  },
+
+  async save(key, data) {
+    if (this._mode === "azure") {
+      try {
+        const res = await fetch(this._url(key), {
+          method: "PUT",
+          headers: { "x-ms-blob-type": "BlockBlob", "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (res.ok) return "azure";
+        if (res.status === 403) {
+          // SAS token expired — clear session so user is prompted to re-login
+          localStorage.removeItem("opsboard_session");
+          this._mode = "local";
+          console.warn("Session expired — please sign in again.");
+        } else {
+          throw new Error(res.statusText);
+        }
+      } catch (e) {
+        console.warn("Cloud save failed, using local fallback:", e.message);
+        this._mode = "local";
+      }
+    }
+    try { localStorage.setItem(`opsboard_${key}`, JSON.stringify(data)); return "local"; }
+    catch { return "memory"; }
+  },
+
+  async load(key, defaultVal) {
+    if (this._mode === "azure") {
+      try {
+        const res = await fetch(this._url(key));
+        if (res.ok) return await res.json();
+        if (res.status === 403) {
+          // SAS token expired — clear session so user is prompted to re-login
+          localStorage.removeItem("opsboard_session");
+          this._mode = "local";
+          console.warn("Session expired — please sign in again.");
+        } else if (res.status !== 404) {
+          throw new Error(res.statusText);
+        }
+        return defaultVal; // 404 = no data yet, that's fine
+      } catch (e) {
+        console.warn("Cloud load failed, using local fallback:", e.message);
+        this._mode = "local";
+      }
+    }
+    try { const s = localStorage.getItem(`opsboard_${key}`); return s ? JSON.parse(s) : defaultVal; }
+    catch { return defaultVal; }
+  },
+
+  mode() { return this._mode; },
+};
+
+// ── Auth Service ───────────────────────────────────────────────────────────
+// Calls your Azure Functions for login/register.
+// ▶ Your Function at /auth/login  must accept:  POST { email, password }
+// ▶ Your Function at /auth/register must accept: POST { email, password, displayName }
+// ▶ Both must return: { token, userId, displayName, sasToken }
+//   where sasToken is a SAS query string for the user's blob directory.
+const AuthService = {
+  _token: null,
+  _user:  null,
+
+  // Extracts a human-friendly message from an API error response.
+  // API returns { error: "..." }, fallback to status-based messages.
+  async _parseError(res) {
+    const statusMessages = {
+      400: "Please check your details and try again.",
+      401: "Incorrect email or password.",
+      403: "You don't have permission to do that.",
+      404: "Account not found.",
+      409: "An account with this email already exists.",
+      429: "Too many attempts. Please wait a moment and try again.",
+      500: "Something went wrong on our end. Please try again shortly.",
+    };
+    try {
+      const body = await res.json();
+      return body.error || body.message || statusMessages[res.status] || "Something went wrong. Please try again.";
+    } catch {
+      return statusMessages[res.status] || "Something went wrong. Please try again.";
+    }
+  },
+
+  async login(email, password) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return this._apply(await res.json(), email);
+  },
+
+  async register(email, password, displayName) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, name: displayName }),
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return this._apply(await res.json(), email);
+  },
+
+  // ── Microsoft SSO ──────────────────────────────────────────────────────
+  async msalLogin() {
+    const msalInst = await initialiseMsal();
+    if (!msalInst) throw new Error("Work account sign-in is not available.");
+
+    let result;
+    try {
+      result = await msalInst.loginPopup({
+        scopes: ["openid", "profile", "email"],
+        prompt: "select_account",
+      });
+    } catch (err) {
+      // BrowserAuthError: popup_window_error means the popup was blocked
+      if (err?.errorCode === "popup_window_error" || err?.name === "BrowserAuthError") {
+        throw new Error("Sign-in popup was blocked. Please allow popups for this site and try again.");
+      }
+      // User cancelled
+      if (err?.errorCode === "user_cancelled") {
+        throw new Error("Sign-in was cancelled.");
+      }
+      throw new Error(err?.message || "Work account sign-in failed. Please try again.");
+    }
+
+    if (!result?.idToken) throw new Error("No identity token received from sign-in.");
+
+    const res = await fetch(`${AZURE.functionsUrl}/auth/microsoft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: result.idToken }),
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return this._apply(await res.json(), result.account.username);
+  },
+
+  // ── Forgot password ────────────────────────────────────────────────────
+  async forgotPassword(email) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return true;
+  },
+
+  // ── Reset password ──────────────────────────────────────────────────────
+  async resetPassword(token, newPassword) {
+    const res = await fetch(`${AZURE.functionsUrl}/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, newPassword }),
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return true;
+  },
+
+  _apply(data, email) {
+    this._token = data.token;
+    const u     = data.user || {};
+    this._user  = { id: u.id || data.userId, name: u.name || data.displayName, email };
+    StorageService.init(this._user.id, data.sasToken);
+    localStorage.setItem("opsboard_session", JSON.stringify({ token: data.token, user: this._user, sasToken: data.sasToken }));
+    return this._user;
+  },
+
+  restoreSession() {
+    try {
+      const raw = localStorage.getItem("opsboard_session");
+      if (!raw) return null;
+      const { token, user, sasToken } = JSON.parse(raw);
+      this._token = token; this._user = user;
+      StorageService.init(user.id, sasToken);
+      return user;
+    } catch { return null; }
+  },
+
+  logout() {
+    this._token = null; this._user = null;
+    StorageService.init(null, null);
+    localStorage.removeItem("opsboard_session");
+  },
+
+  get user() { return this._user; },
+};
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const pc = p => p==="Critical"?"badge-critical":p==="High"?"badge-high":p==="Medium"?"badge-medium":"badge-low";
+const sc = s => s==="Todo"?"status-todo":s==="In Progress"?"status-inprogress":s==="Review"?"status-review":s==="Blocked"?"status-blocked":"status-done";
+const cc = c => CAT_COLORS[c]||"text-slate-400";
+const today = () => new Date().toISOString().slice(0,10);
+const isOverdue  = d => d && d < today() ? true : false;
+const isDueSoon  = d => { if (!d) return false; const diff=(new Date(d)-new Date())/86400000; return diff>=0&&diff<=3; };
+const dueBadge   = d => isOverdue(d) ? "overdue" : isDueSoon(d) ? "due-soon" : "";
+const initials   = n => n.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+const fmtDate    = d => { if (!d) return "—"; const dt=new Date(d+"T00:00:00"); return dt.toLocaleDateString("en-GB",{day:"numeric",month:"short"}); };
+
+// ── Toast System ───────────────────────────────────────────────────────────
+function ToastContainer({ toasts, dismiss }) {
+  return ReactDOM.createPortal(
+    <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
+      {toasts.map(t => (
+        <div key={t.id} onClick={()=>dismiss(t.id)}
+          className={`toast-slide flex items-center gap-3 px-4 py-3 rounded-lg shadow-xl cursor-pointer border text-sm font-medium
+            ${t.type==="success"?"bg-emerald-950 border-emerald-800 text-emerald-300":
+              t.type==="error"?"bg-red-950 border-red-800 text-red-300":
+              t.type==="warn"?"bg-orange-950 border-orange-800 text-orange-300":
+              "bg-slate-800 border-slate-700 text-slate-200"}`}>
+          <span>{t.type==="success"?"✓":t.type==="error"?"✕":t.type==="warn"?"⚠":"ℹ"}</span>
+          <span>{t.message}</span>
+        </div>
+      ))}
+    </div>,
+    document.body
+  );
+}
+function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const toast = useCallback((message, type="info") => {
+    const id = Date.now()+Math.random();
+    setToasts(ts=>[...ts,{id,message,type}]);
+    setTimeout(()=>setToasts(ts=>ts.filter(t=>t.id!==id)),3000);
+  },[]);
+  const dismiss = useCallback(id=>setToasts(ts=>ts.filter(t=>t.id!==id)),[]);
+  return { toasts, toast, dismiss };
+}
+
+// ── Confirm Modal ──────────────────────────────────────────────────────────
+function ConfirmModal({ title, message, confirmLabel="Confirm", danger=false, onConfirm, onCancel, accentColor }) {
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 fade-in"
+      onClick={e=>e.target===e.currentTarget&&onCancel()}>
+      <div className="glass rounded-xl w-full max-w-sm p-6 shadow-2xl">
+        <h3 className="text-white font-semibold text-base mb-2">{title}</h3>
+        <p className="text-slate-400 text-sm mb-6">{message}</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-2 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-700">Cancel</button>
+          <button onClick={onConfirm}
+            className={`flex-1 py-2 rounded-md text-sm font-semibold ${danger?"bg-red-700 hover:bg-red-600 text-white":"text-white hover:opacity-90"}`}
+            style={danger?{}:{background:accentColor}}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>, document.body
+  );
+}
+
+// ── Search Bar ─────────────────────────────────────────────────────────────
+function SearchBar({ value, onChange, onClose }) {
+  const ref = useRef();
+  useEffect(()=>{ ref.current?.focus(); },[]);
+  return (
+    <div className="flex items-center gap-2 bg-slate-800 border border-indigo-500/50 rounded-lg px-3 py-1.5 w-72">
+      <svg className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      <input ref={ref} type="search" value={value} onChange={e=>onChange(e.target.value)}
+        className="bg-transparent text-white text-sm flex-1 placeholder-slate-500"
+        placeholder="Search tasks… (Esc to close)"/>
+      {value && <button onClick={()=>onChange("")} className="text-slate-500 hover:text-slate-300 text-xs">✕</button>}
+    </div>
+  );
+}
+
+// ── TopNav ─────────────────────────────────────────────────────────────────
+function TopNav({ activeTab, setActiveTab, onNew, settings, tasks, search, setSearch, showSearch, setShowSearch, storageMode, user, onLogout, onSettings, onDeleteData, onDeleteAccount, onToggleTheme, isDark }) {
+  const tabs = ["Dashboard","Backlog","Board","Incidents","Vulnerabilities"];
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef();
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = e => { if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Derive initials from user display name, fall back to settings.initials
+  const nameInitials = (() => {
+    const src = user?.name || settings.userName || "";
+    const parts = src.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length-1][0]).toUpperCase();
+    if (parts.length === 1) return parts[0].slice(0,2).toUpperCase();
+    return settings.initials || "?";
+  })();
+
+  const displayName = user?.name || settings.userName || "Account";
+  const displayEmail = user?.email || "";
+
+  const badgeCount = tab => {
+    if (tab==="Incidents") return tasks.filter(t=>t.category==="Incident"&&t.status!=="Done").length;
+    if (tab==="Vulnerabilities") return tasks.filter(t=>t.category==="Vulnerability"&&t.status!=="Done").length;
+    const overdue = tasks.filter(t=>t.status!=="Done"&&isOverdue(t.dueDate)).length;
+    if (tab==="Dashboard" && overdue>0) return overdue;
+    return 0;
+  };
+
+  return (
+    <nav className="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur select-none flex-shrink-0 z-40">
+      {/* Top bar: logo + controls */}
+      <div className="flex items-center gap-2 px-3 h-12">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="w-6 h-6 rounded flex items-center justify-center shadow-lg" style={{background:settings.accentColor}}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+              <rect x="8" y="1" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+              <rect x="1" y="8" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+              <rect x="8" y="8" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+            </svg>
+          </div>
+          <span className="font-bold text-white text-sm tracking-tight">
+            {settings.appName.slice(0,-5)||"Ops"}
+            <span style={{color:settings.accentColor}}>{settings.appName.slice(-5)||"Board"}</span>
+          </span>
+          {settings.domain && <span className="hidden sm:inline ml-1 text-xs text-slate-500 font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded-full">{settings.domain}</span>}
+        </div>
+        <div className="flex-1"/>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {showSearch
+            ? <SearchBar value={search} onChange={setSearch} onClose={()=>{setShowSearch(false);setSearch("");}}/>
+            : <>
+                <button onClick={()=>setShowSearch(true)}
+                  className="p-1.5 rounded-md text-slate-400 hover:text-white transition-colors" title="Search (/)">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </button>
+                <button onClick={onNew}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-white text-sm font-medium hover:opacity-90 transition-all shadow-lg"
+                  style={{background:settings.accentColor}} title="New Task (N)">
+                  <span className="text-base leading-none">+</span>
+                  <span className="hidden sm:inline"> New Task</span>
+                </button>
+                {storageMode && <StorageBadge mode={storageMode}/>}
+
+                {/* Profile dropdown */}
+                <div className="relative" ref={profileRef}>
+                  <button onClick={()=>setProfileOpen(o=>!o)}
+                    className="flex items-center gap-1.5 rounded-full transition-all hover:ring-2 hover:ring-offset-2 hover:ring-offset-slate-900 focus:outline-none"
+                    style={profileOpen?{ringColor:settings.accentColor}:{}}
+                    title={displayName}>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 transition-all"
+                      style={{background:settings.accentColor+"cc", boxShadow: profileOpen ? `0 0 0 2px ${settings.accentColor}` : "none"}}>
+                      {nameInitials}
+                    </div>
+                  </button>
+
+                  {/* Dropdown menu */}
+                  {profileOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl shadow-2xl z-50 overflow-hidden fade-in"
+                      style={{background:"var(--bg-panel)",border:"1px solid rgba(99,102,241,0.2)",backdropFilter:"blur(16px)"}}>
+
+                      {/* User info header */}
+                      <div className="px-4 py-3 border-b border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                            style={{background:settings.accentColor+"cc"}}>
+                            {nameInitials}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-white text-sm font-medium truncate">{displayName}</div>
+                            {displayEmail && <div className="text-slate-500 text-xs truncate">{displayEmail}</div>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Menu items */}
+                      <div className="py-1.5">
+                        <button onClick={onToggleTheme}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800/80 hover:text-white transition-colors text-left">
+                          <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+                          </svg>
+                          {isDark ? "Switch to light mode" : "Switch to dark mode"}
+                        </button>
+                        <button onClick={()=>{onSettings();setProfileOpen(false);}}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800/80 hover:text-white transition-colors text-left">
+                          <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                          </svg>
+                          Settings
+                        </button>
+
+                        <div className="mx-3 my-1.5 border-t border-slate-800"/>
+
+                        <button onClick={()=>{onDeleteData();setProfileOpen(false);}}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-orange-400 hover:bg-orange-950/40 transition-colors text-left">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                          </svg>
+                          Clear all data
+                        </button>
+
+                        {user?.id !== "local" && (<>
+                          <button onClick={()=>{onDeleteAccount();setProfileOpen(false);}}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-950/40 transition-colors text-left">
+                            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6"/>
+                            </svg>
+                            Delete account
+                          </button>
+
+                          <div className="mx-3 my-1.5 border-t border-slate-800"/>
+
+                          <button onClick={()=>{onLogout();setProfileOpen(false);}}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-400 hover:bg-slate-800/80 hover:text-white transition-colors text-left">
+                            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                            </svg>
+                            Sign out
+                          </button>
+                        </>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+          }
+        </div>
+      </div>
+      {/* Scrollable tab strip */}
+      {!showSearch && (
+        <div className="flex overflow-x-auto border-t border-slate-800/60" style={{scrollbarWidth:"none",msOverflowStyle:"none"}}>
+          {tabs.map(t=>{
+            const badge = badgeCount(t);
+            return (
+              <button key={t} onClick={()=>setActiveTab(t)}
+                className={`relative flex-shrink-0 h-10 px-4 text-sm font-medium transition-all border-b-2 whitespace-nowrap ${activeTab===t?"text-indigo-400":"border-transparent text-slate-400 hover:text-slate-200"}`}
+                style={activeTab===t?{borderColor:settings.accentColor,color:settings.accentColor}:{borderColor:"transparent"}}>
+                {t}
+                {badge>0 && <span className="absolute top-1.5 right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">{badge>9?"9+":badge}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </nav>
+  );
+}
+
+// ── Search Results ─────────────────────────────────────────────────────────
+function SearchResults({ tasks, query, onSelect, settings }) {
+  if (!query.trim()) return null;
+  const q = query.toLowerCase();
+  const results = tasks.filter(t=>
+    t.title.toLowerCase().includes(q)||t.description.toLowerCase().includes(q)||
+    t.category.toLowerCase().includes(q)||t.tags.some(tg=>tg.toLowerCase().includes(q))
+  ).slice(0,8);
+  return (
+    <div className="p-4 fade-in">
+      <div className="text-xs text-slate-500 mb-3">{results.length} result{results.length!==1?"s":""} for "<span className="text-slate-300">{query}</span>"</div>
+      {results.length===0
+        ? <div className="text-slate-500 text-sm text-center py-8">No tasks match your search.</div>
+        : <div className="flex flex-col gap-2">
+            {results.map(t=>(
+              <div key={t.id} onClick={()=>onSelect(t.id)}
+                className="glass rounded-lg p-3 cursor-pointer hover:border-indigo-500/40 transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-slate-200 text-sm font-medium flex-1">{t.title}</span>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${pc(t.priority)}`}>{t.priority}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${sc(t.status)}`}>{t.status}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-500">
+                  <span className={cc(t.category)}>{t.category}</span>
+                  <span>·</span><span>{t.assignee}</span>
+                  {t.dueDate&&<><span>·</span><span className={dueBadge(t.dueDate)?`text-xs px-1.5 rounded ${dueBadge(t.dueDate)}`:""}>{fmtDate(t.dueDate)}</span></>}
+                </div>
+              </div>
+            ))}
+          </div>
+      }
+    </div>
+  );
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function Dashboard({ tasks, onSelect, settings }) {
+  const open     = tasks.filter(t=>t.status!=="Done");
+  const overdue  = open.filter(t=>isOverdue(t.dueDate));
+  const dueSoon  = open.filter(t=>isDueSoon(t.dueDate));
+  const critical = open.filter(t=>t.priority==="Critical");
+  const pct      = tasks.length ? Math.round((tasks.filter(t=>t.status==="Done").length/tasks.length)*100) : 0;
+  const r=28, circ=2*Math.PI*r;
+  const stats = [
+    {label:"Open",value:open.length,color:"text-indigo-400",bg:"bg-indigo-950/60",border:"border-indigo-900/50"},
+    {label:"Overdue",value:overdue.length,color:"text-red-400",bg:"bg-red-950/60",border:"border-red-900/50"},
+    {label:"Due Soon",value:dueSoon.length,color:"text-orange-400",bg:"bg-orange-950/60",border:"border-orange-900/50"},
+    {label:"Critical",value:critical.length,color:"text-pink-400",bg:"bg-pink-950/60",border:"border-pink-900/50"},
+  ];
+  const byStatus = STATUSES.map(s=>({status:s,count:tasks.filter(t=>t.status===s).length}));
+  const recent = [...tasks].sort((a,b)=>b.id-a.id).slice(0,5);
+  return (
+    <div className="p-4 sm:p-6 fade-in max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-white font-semibold text-lg">Dashboard</h2>
+        <span className="text-slate-500 text-xs">{new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</span>
+      </div>
+
+      {/* Stat cards — 2 cols on mobile, 4 on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        {stats.map(s=>(
+          <div key={s.label} className={`${s.bg} border ${s.border} rounded-xl p-4`}>
+            <div className={`text-3xl font-bold ${s.color} mb-0.5`}>{s.value}</div>
+            <div className="text-slate-400 text-sm">{s.label}</div>
+            {s.label==="Overdue"&&s.value>0&&(
+              <div className="mt-1.5 flex items-center gap-1 text-xs text-red-400">
+                <span className="pulse-dot w-1.5 h-1.5 rounded-full bg-red-500 inline-block"/>
+                Needs attention
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Overdue alert — shown early on mobile so it's not buried */}
+      {overdue.length>0&&(
+        <div className="glass rounded-xl p-4 border border-red-900/50 mb-4">
+          <h3 className="text-red-400 font-medium text-sm mb-2 flex items-center gap-2">
+            <span className="pulse-dot w-2 h-2 rounded-full bg-red-500 inline-block"/>
+            {overdue.length} Overdue Task{overdue.length>1?"s":""}
+          </h3>
+          <div className="flex flex-col gap-2">
+            {overdue.map(t=>(
+              <div key={t.id} onClick={()=>onSelect(t.id)}
+                className="flex items-center gap-3 cursor-pointer hover:opacity-80">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${pc(t.priority)}`}>{t.priority}</span>
+                <span className="text-slate-300 text-sm flex-1 truncate">{t.title}</span>
+                <span className="text-red-400 text-xs font-mono flex-shrink-0">{fmtDate(t.dueDate)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Progress + Status — stack on mobile, side by side on sm+ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        {/* Progress ring */}
+        <div className="glass rounded-xl p-5 flex items-center gap-5">
+          <svg width="72" height="72" className="progress-ring flex-shrink-0">
+            <circle cx="36" cy="36" r={r} fill="none" stroke="#1e293b" strokeWidth="6"/>
+            <circle cx="36" cy="36" r={r} fill="none" stroke={settings.accentColor} strokeWidth="6"
+              strokeDasharray={circ} strokeDashoffset={circ*(1-pct/100)} strokeLinecap="round"
+              style={{transition:"stroke-dashoffset .6s ease"}}/>
+          </svg>
+          <div>
+            <div className="text-3xl font-bold text-white">{pct}%</div>
+            <div className="text-slate-400 text-sm mt-0.5">Completion rate</div>
+            <div className="text-slate-500 text-xs mt-1">{tasks.filter(t=>t.status==="Done").length} of {tasks.length} tasks done</div>
+          </div>
+        </div>
+
+        {/* Status breakdown */}
+        <div className="glass rounded-xl p-4">
+          <h3 className="text-slate-300 font-medium text-sm mb-3">By Status</h3>
+          <div className="flex flex-col gap-2">
+            {byStatus.map(({status,count})=>(
+              <div key={status} className="flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 w-20 text-center ${sc(status)}`}>{status}</span>
+                <div className="flex-1 bg-slate-800 rounded-full h-1.5">
+                  <div className="h-1.5 rounded-full transition-all duration-500" style={{width:tasks.length?`${(count/tasks.length)*100}%`:"0%",background:settings.accentColor}}/>
+                </div>
+                <span className="text-slate-400 text-xs w-5 text-right flex-shrink-0">{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="glass rounded-xl p-4 mb-4">
+        <h3 className="text-slate-300 font-medium text-sm mb-3">Recent Activity</h3>
+        <div className="flex flex-col gap-2">
+          {recent.map(t=>(
+            <div key={t.id} onClick={()=>onSelect(t.id)}
+              className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
+              <span className={`text-xs px-2 py-0.5 rounded font-medium flex-shrink-0 ${sc(t.status)}`}>{t.status}</span>
+              <span className="text-slate-300 text-sm truncate flex-1">{t.title}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tasks by Category */}
+      <div className="glass rounded-xl p-4">
+        <h3 className="text-slate-300 font-medium text-sm mb-3">Tasks by Category</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {settings.categories.map(cat=>{
+            const all=tasks.filter(t=>t.category===cat);
+            const done=all.filter(t=>t.status==="Done").length;
+            if(!all.length)return null;
+            return (
+              <div key={cat} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2.5">
+                <div className={`text-xs font-medium ${cc(cat)} mb-1.5 truncate`}>{cat}</div>
+                <div className="flex items-baseline gap-1.5 mb-1.5">
+                  <span className="text-white font-bold text-xl">{all.length}</span>
+                  <span className="text-slate-500 text-xs">{done} done</span>
+                </div>
+                <div className="bg-slate-700 rounded-full h-1">
+                  <div className="h-1 rounded-full" style={{width:all.length?`${(done/all.length)*100}%`:"0%",background:settings.accentColor}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Quick Filters ──────────────────────────────────────────────────────────
+function QuickFilters({ active, setActive, tasks, settings }) {
+  const chips = [
+    {id:"all",label:"All"},
+    {id:"mine",label:"My Tasks"},
+    {id:"overdue",label:"Overdue"},
+    {id:"due-today",label:"Due Today"},
+    {id:"due-week",label:"Due This Week"},
+    {id:"no-assignee",label:"Unassigned"},
+  ];
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {chips.map(c=>(
+        <button key={c.id} onClick={()=>setActive(c.id)}
+          className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all border ${active===c.id?"text-white border-transparent":"bg-slate-800/60 text-slate-400 border-slate-700/50 hover:text-slate-200"}`}
+          style={active===c.id?{background:settings.accentColor,borderColor:settings.accentColor}:{}}>
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Backlog ────────────────────────────────────────────────────────────────
+function Backlog({ tasks, onSelect, selectedId, settings, toast }) {
+  const [filterCat, setFilterCat]     = useState("All");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [sort, setSort]               = useState("id");
+  const [sortDir, setSortDir]         = useState("desc");
+  const [quickFilter, setQuickFilter] = useState("all");
+  const allCats = ["All",...settings.categories];
+  const todayStr = today();
+  const weekEnd  = new Date(); weekEnd.setDate(weekEnd.getDate()+7);
+  const weekStr  = weekEnd.toISOString().slice(0,10);
+
+  let filtered = tasks.filter(t=>
+    (filterCat==="All"||t.category===filterCat)&&
+    (filterStatus==="All"||t.status===filterStatus)
+  );
+  if (quickFilter==="mine")       filtered=filtered.filter(t=>t.assignee===settings.assignees[0]);
+  if (quickFilter==="overdue")    filtered=filtered.filter(t=>t.status!=="Done"&&isOverdue(t.dueDate));
+  if (quickFilter==="due-today")  filtered=filtered.filter(t=>t.dueDate===todayStr);
+  if (quickFilter==="due-week")   filtered=filtered.filter(t=>t.dueDate&&t.dueDate>=todayStr&&t.dueDate<=weekStr);
+  if (quickFilter==="no-assignee")filtered=filtered.filter(t=>t.assignee==="Unassigned");
+
+  const sortFns = {
+    id:(a,b)=>a.id-b.id, title:(a,b)=>a.title.localeCompare(b.title),
+    priority:(a,b)=>PRIORITIES.indexOf(a.priority)-PRIORITIES.indexOf(b.priority),
+    status:(a,b)=>STATUSES.indexOf(a.status)-STATUSES.indexOf(b.status),
+    dueDate:(a,b)=>(a.dueDate||"9999")>(b.dueDate||"9999")?1:-1,
+  };
+  filtered = [...filtered].sort((a,b)=>(sortDir==="asc"?1:-1)*(sortFns[sort]||sortFns.id)(a,b));
+
+  const toggleSort = col => { if(sort===col)setSortDir(d=>d==="asc"?"desc":"asc"); else{setSort(col);setSortDir("asc");} };
+  const SortIcon = ({col})=> sort===col ? <span className="text-slate-400">{sortDir==="asc"?"↑":"↓"}</span> : <span className="text-slate-700">↕</span>;
+
+  return (
+    <div className="fade-in flex flex-col h-full">
+      <div className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-800/60 bg-slate-900/50 flex-shrink-0 flex-wrap gap-y-2">
+        <QuickFilters active={quickFilter} setActive={setQuickFilter} tasks={tasks} settings={settings}/>
+        <div className="ml-auto flex items-center gap-2">
+          <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
+            className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-md px-2 py-1">
+            {allCats.map(c=><option key={c}>{c}</option>)}
+          </select>
+          <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
+            className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-md px-2 py-1">
+            <option>All</option>{STATUSES.map(s=><option key={s}>{s}</option>)}
+          </select>
+          <span className="text-slate-500 text-xs">{filtered.length} task{filtered.length!==1?"s":""}</span>
+        </div>
+      </div>
+      <div className="flex items-center px-5 py-2 text-xs text-slate-500 uppercase tracking-wide border-b border-slate-800/60 flex-shrink-0">
+        <span className="w-7">#</span>
+        <button className="flex-1 flex items-center gap-1 text-left hover:text-slate-300" onClick={()=>toggleSort("title")}>Title <SortIcon col="title"/></button>
+        <button className="w-28 flex items-center gap-1 hover:text-slate-300" onClick={()=>toggleSort("priority")}>Priority <SortIcon col="priority"/></button>
+        <button className="w-24 flex items-center gap-1 hover:text-slate-300" onClick={()=>toggleSort("status")}>Status <SortIcon col="status"/></button>
+        <span className="w-24 hidden md:block">Category</span>
+        <span className="w-24 hidden md:block">Assignee</span>
+        <button className="w-24 flex items-center gap-1 hover:text-slate-300" onClick={()=>toggleSort("dueDate")}>Due <SortIcon col="dueDate"/></button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {filtered.length===0&&<div className="text-slate-500 text-sm text-center py-16">No tasks match the current filter.</div>}
+        {filtered.map(t=>{
+          const db=dueBadge(t.dueDate);
+          return (
+            <div key={t.id} onClick={()=>onSelect(t.id)}
+              className={`task-row flex items-center px-5 py-2.5 cursor-pointer border-b border-slate-800/40 ${selectedId===t.id?"bg-slate-800/80":""}`}>
+              <span className="w-7 text-slate-600 text-xs">{t.id}</span>
+              <div className="flex-1 flex items-center gap-2 min-w-0 pr-3">
+                <span className={`text-sm font-medium truncate ${t.status==="Done"?"text-slate-500 line-through":""}`}>{t.title}</span>
+                {t.notes&&<span title="Has notes" className="text-slate-500 text-xs flex-shrink-0">📝</span>}
+                {t.checklist.length>0&&<span className="text-slate-600 text-xs flex-shrink-0">{t.checklist.filter(c=>c.done).length}/{t.checklist.length}</span>}
+              </div>
+              <span className="w-28"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${pc(t.priority)}`}>{t.priority}</span></span>
+              <span className="w-24"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sc(t.status)}`}>{t.status}</span></span>
+              <span className={`w-24 hidden md:block text-xs font-medium ${cc(t.category)}`}>{t.category}</span>
+              <span className="w-24 hidden md:block text-slate-400 text-xs">{t.assignee}</span>
+              <span className="w-24">
+                {t.dueDate
+                  ? <span className={`text-xs ${db?`px-1.5 py-0.5 rounded-full font-medium ${db}`:"text-slate-400"}`}>{fmtDate(t.dueDate)}</span>
+                  : <span className="text-slate-600 text-xs">—</span>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Board ──────────────────────────────────────────────────────────────────
+function Board({ tasks, onSelect, settings }) {
+  return (
+    <div className="fade-in flex gap-3 p-4 overflow-x-auto h-full">
+      {STATUSES.map(col=>{
+        const colTasks=tasks.filter(t=>t.status===col);
+        return (
+          <div key={col} className="kanban-col flex-shrink-0 w-60 glass rounded-xl flex flex-col">
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-800/60">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${sc(col)}`}>{col}</span>
+              <span className="text-slate-500 text-xs">{colTasks.length}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+              {colTasks.map(t=>{
+                const db=dueBadge(t.dueDate);
+                return (
+                  <div key={t.id} onClick={()=>onSelect(t.id)}
+                    className="bg-slate-800/60 border border-slate-700/40 rounded-lg p-3 cursor-pointer hover:border-indigo-500/40 transition-all hover:shadow-lg hover:shadow-indigo-500/5">
+                    <div className={`text-xs font-medium leading-snug mb-2 ${t.status==="Done"?"text-slate-500 line-through":"text-slate-200"}`}>{t.title}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${pc(t.priority)}`}>{t.priority}</span>
+                      <span className={`text-xs font-medium ${cc(t.category)}`}>{t.category}</span>
+                    </div>
+                    <div className="flex items-center justify-between mt-2">
+                      {t.checklist.length>0&&(
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-14 bg-slate-700 rounded-full h-1">
+                            <div className="h-1 rounded-full" style={{width:`${(t.checklist.filter(c=>c.done).length/t.checklist.length)*100}%`,background:settings.accentColor}}/>
+                          </div>
+                          <span className="text-slate-500 text-xs">{t.checklist.filter(c=>c.done).length}/{t.checklist.length}</span>
+                        </div>
+                      )}
+                      {db&&<span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${db}`}>{fmtDate(t.dueDate)}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Incidents ──────────────────────────────────────────────────────────────
+function Incidents({ tasks, onSelect, selectedId }) {
+  const incidents=tasks.filter(t=>t.category==="Incident");
+  return (
+    <div className="fade-in p-6 max-w-4xl">
+      <h2 className="text-white font-semibold text-lg mb-4">Incidents</h2>
+      {incidents.length===0&&<div className="text-slate-500 text-sm">No incidents logged.</div>}
+      <div className="flex flex-col gap-3">
+        {incidents.map(t=>(
+          <div key={t.id} onClick={()=>onSelect(t.id)}
+            className={`glass rounded-xl p-4 cursor-pointer transition-all hover:border-indigo-500/30 ${selectedId===t.id?"border-indigo-500/50 bg-slate-800/50":""}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="text-slate-200 font-medium text-sm mb-1">{t.title}</div>
+                <div className="text-slate-400 text-xs line-clamp-2">{t.description}</div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sc(t.status)}`}>{t.status}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${pc(t.priority)}`}>{t.priority}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-3 text-xs text-slate-500">
+              <span>{t.assignee}</span><span>·</span>
+              <span className={dueBadge(t.dueDate)?`px-1.5 py-0.5 rounded-full ${dueBadge(t.dueDate)}`:""}>{fmtDate(t.dueDate)}</span>
+              <span>·</span><span>{t.checklist.filter(c=>c.done).length}/{t.checklist.length} resolved</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Vulnerabilities ────────────────────────────────────────────────────────
+function Vulnerabilities({ tasks, onSelect, selectedId }) {
+  const vulns=tasks.filter(t=>t.category==="Vulnerability");
+  return (
+    <div className="fade-in p-6 max-w-4xl">
+      <h2 className="text-white font-semibold text-lg mb-4">Vulnerabilities</h2>
+      {vulns.length===0&&<div className="text-slate-500 text-sm">No vulnerabilities tracked.</div>}
+      <div className="flex flex-col gap-3">
+        {vulns.map(t=>(
+          <div key={t.id} onClick={()=>onSelect(t.id)}
+            className={`glass rounded-xl p-4 cursor-pointer transition-all hover:border-indigo-500/30 ${selectedId===t.id?"border-indigo-500/50":""}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${pc(t.priority)}`}>{t.priority}</span>
+                  {t.tags.map(tag=><span key={tag} className="text-xs bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">{tag}</span>)}
+                </div>
+                <div className="text-slate-200 font-medium text-sm">{t.title}</div>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${sc(t.status)}`}>{t.status}</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-500 flex items-center gap-3">
+              <span>{t.assignee}</span><span>·</span>
+              <span className={dueBadge(t.dueDate)?`px-1.5 py-0.5 rounded-full ${dueBadge(t.dueDate)}`:""}>{fmtDate(t.dueDate)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────
+function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClearTasks, toast }) {
+  const [draft,setDraft]     = useState({...DEFAULT_SETTINGS,...settings});
+  const [newAssignee,setNA]  = useState("");
+  const [newCategory,setNC]  = useState("");
+  const [saved,setSaved]     = useState(false);
+  const [section,setSection] = useState("General");
+  const [confirm,setConfirm] = useState(null);
+  const fileRef = useRef();
+
+  // Keep draft in sync if settings change externally
+  useEffect(()=>{ setDraft({...DEFAULT_SETTINGS,...settings}); },[settings]);
+
+  const upd = (k,v) => setDraft(d=>({...d,[k]:v}));
+  const addA = () => { const v=newAssignee.trim(); if(!v||draft.assignees.includes(v))return; upd("assignees",[...draft.assignees,v]); setNA(""); };
+  const addC = () => { const v=newCategory.trim(); if(!v||draft.categories.includes(v))return; upd("categories",[...draft.categories,v]); setNC(""); };
+  const save = () => { onSave(draft); setSaved(true); toast("Settings saved","success"); setTimeout(()=>setSaved(false),1500); };
+
+  const doExport = () => {
+    const blob = new Blob([JSON.stringify({tasks,settings},null,2)],{type:"application/json"});
+    const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="opsboard-backup.json"; a.click();
+    toast("Backup exported","success");
+  };
+  const doImport = e => {
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if(d.tasks) onImportTasks(d.tasks);
+        if(d.settings) onSave(d.settings);
+        toast("Import successful","success");
+      } catch { toast("Invalid file format","error"); }
+    };
+    reader.readAsText(file); e.target.value="";
+  };
+
+  // Stats derived from tasks
+  const totalTasks   = tasks.length;
+  const doneTasks    = tasks.filter(t=>t.status==="Done").length;
+  const overdueTasks = tasks.filter(t=>t.status!=="Done"&&isOverdue(t.dueDate)).length;
+  const criticalOpen = tasks.filter(t=>t.priority==="Critical"&&t.status!=="Done").length;
+  const completionPct = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0;
+  const byCategory = settings.categories.map(c=>({ name:c, count:tasks.filter(t=>t.category===c).length })).filter(x=>x.count>0).sort((a,b)=>b.count-a.count);
+  const byAssignee = settings.assignees.map(a=>({ name:a, count:tasks.filter(t=>t.assignee===a&&t.status!=="Done").length })).filter(x=>x.count>0).sort((a,b)=>b.count-a.count);
+
+  const inputCls = "w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors";
+  const selectCls = "w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors";
+
+  const Toggle = ({value, onChange, label, desc}) => (
+    <div className="flex items-center justify-between py-3 border-b border-slate-800/60 last:border-0">
+      <div>
+        <div className="text-slate-200 text-sm">{label}</div>
+        {desc && <div className="text-slate-500 text-xs mt-0.5">{desc}</div>}
+      </div>
+      <button onClick={()=>onChange(!value)}
+        className="relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ml-4"
+        style={{background:value?draft.accentColor:"#1e293b"}}>
+        <span className="absolute top-0.5 transition-all w-4 h-4 rounded-full bg-white shadow"
+          style={{left:value?"calc(100% - 18px)":"2px"}}/>
+      </button>
+    </div>
+  );
+
+  const sections = ["General","Profile","Team","Categories","Task Defaults","Notifications","Stats","Data","Shortcuts"];
+
+  return (
+    <div className="fade-in flex h-full">
+      {/* Sidebar */}
+      <div className="w-48 border-r p-4 flex-shrink-0 overflow-y-auto" style={{borderColor:"var(--border)"}}>
+        <div className="text-xs text-slate-500 uppercase tracking-wide mb-3">Settings</div>
+        {sections.map(s=>(
+          <button key={s} onClick={()=>setSection(s)}
+            className={`w-full text-left px-3 py-2 rounded-md text-sm mb-0.5 transition-colors ${section===s?"bg-slate-800 text-white":"text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"}`}>
+            {s}
+          </button>
+        ))}
+        <div className="mt-4 pt-4 border-t border-slate-800/60">
+          <button onClick={save}
+            className={`w-full py-2 rounded-md text-sm font-semibold transition-colors ${saved?"bg-emerald-600 text-white":"text-white hover:opacity-90"}`}
+            style={saved?{}:{background:settings.accentColor}}>
+            {saved?"Saved ✓":"Save Changes"}
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+
+        {/* ── General ── */}
+        {section==="General"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">General</h2>
+            <p className="text-slate-400 text-sm mb-5">App name, branding, and display preferences.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <h3 className="text-slate-300 text-sm font-medium mb-4">Application</h3>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">App Name</label>
+                <input value={draft.appName} onChange={e=>upd("appName",e.target.value)} className={inputCls}/>
+              </div>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Custom Domain</label>
+                <div className="flex items-center bg-slate-800 border border-slate-700 rounded-md overflow-hidden focus-within:border-indigo-500 transition-colors">
+                  <span className="pl-3 text-slate-500 text-sm select-none">https://</span>
+                  <input value={draft.domain} onChange={e=>upd("domain",e.target.value.replace(/^https?:\/\//,""))}
+                    className="flex-1 bg-transparent text-white text-sm px-1 py-2 font-mono" placeholder="yourboard.com"/>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-2 block">Accent Colour</label>
+                <div className="flex items-center gap-3">
+                  <input type="color" value={draft.accentColor} onChange={e=>upd("accentColor",e.target.value)}
+                    className="w-10 h-10 rounded-md cursor-pointer border-0 bg-transparent"/>
+                  <div className="flex gap-2 flex-wrap">
+                    {["#6366f1","#8b5cf6","#ec4899","#ef4444","#f97316","#22c55e","#06b6d4","#3b82f6","#f59e0b","#84cc16"].map(c=>(
+                      <button key={c} onClick={()=>upd("accentColor",c)}
+                        className={`w-6 h-6 rounded-full border-2 transition-all ${draft.accentColor===c?"border-white scale-110":"border-transparent"}`}
+                        style={{background:c}}/>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="glass rounded-xl p-5">
+              <h3 className="text-slate-300 text-sm font-medium mb-3">Display</h3>
+              <Toggle value={draft.compactMode} onChange={v=>upd("compactMode",v)} label="Compact mode" desc="Reduce spacing in task lists"/>
+              <Toggle value={draft.showCompletedTasks} onChange={v=>upd("showCompletedTasks",v)} label="Show completed tasks" desc="Include Done tasks in Backlog and Board views"/>
+              <Toggle value={draft.theme==="light"} onChange={v=>upd("theme",v?"light":"dark")} label="Light mode" desc="Switch between dark and light theme"/>
+              <div className="pt-3">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Date Format</label>
+                <select value={draft.dateFormat} onChange={e=>upd("dateFormat",e.target.value)} className={selectCls}>
+                  <option value="dd/MM/yyyy">DD/MM/YYYY (UK)</option>
+                  <option value="MM/dd/yyyy">MM/DD/YYYY (US)</option>
+                  <option value="yyyy-MM-dd">YYYY-MM-DD (ISO)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Profile ── */}
+        {section==="Profile"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Profile</h2>
+            <p className="text-slate-400 text-sm mb-5">Your name, avatar, and personal preferences.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex items-center gap-4 mb-5 pb-5 border-b border-slate-800/60">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0"
+                  style={{background:draft.accentColor+"cc"}}>
+                  {draft.initials||"?"}
+                </div>
+                <div>
+                  <div className="text-white font-medium">{draft.userName||"Your name"}</div>
+                  <div className="text-slate-500 text-sm mt-0.5">{draft.initials||"--"} · {draft.appName}</div>
+                </div>
+              </div>
+              <div className="flex gap-4 mb-4">
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Display Name</label>
+                  <input value={draft.userName} onChange={e=>upd("userName",e.target.value)} className={inputCls} placeholder="Your name"/>
+                </div>
+                <div className="w-28">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Initials</label>
+                  <input value={draft.initials} onChange={e=>upd("initials",e.target.value.toUpperCase().slice(0,3))} maxLength={3}
+                    className={inputCls+" text-center font-bold tracking-widest"}/>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">Initials appear on your profile avatar in the top bar.</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Team ── */}
+        {section==="Team"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Team</h2>
+            <p className="text-slate-400 text-sm mb-5">Manage assignees available on all tasks.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex flex-col gap-2 mb-4">
+                {draft.assignees.map((a,i)=>(
+                  <div key={a} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs text-white font-bold flex-shrink-0"
+                        style={{background:draft.accentColor+"99"}}>{initials(a)}</div>
+                      <span className="text-slate-200 text-sm">{a}</span>
+                      {i===0&&<span className="text-xs text-slate-600 ml-1">(default)</span>}
+                    </div>
+                    {a!=="Unassigned"&&(
+                      <button onClick={()=>upd("assignees",draft.assignees.filter(x=>x!==a))}
+                        className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input value={newAssignee} onChange={e=>setNA(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addA()}
+                  placeholder="Name or email…" className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+                <button onClick={addA} className="px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90" style={{background:draft.accentColor}}>Add</button>
+              </div>
+            </div>
+            <div className="glass rounded-xl p-4">
+              <div className="text-xs text-slate-500">{draft.assignees.length} team member{draft.assignees.length!==1?"s":""} · Assignees appear in task dropdowns and quick filters.</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Categories ── */}
+        {section==="Categories"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Categories</h2>
+            <p className="text-slate-400 text-sm mb-5">Task categories used for filters, views, and the dashboard.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex flex-col gap-2 mb-4">
+                {draft.categories.map(c=>(
+                  <div key={c} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{background:draft.accentColor}}/>
+                      <span className={`text-sm font-medium ${cc(c)}`}>{c}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-600">{tasks.filter(t=>t.category===c).length} tasks</span>
+                      <button onClick={()=>upd("categories",draft.categories.filter(x=>x!==c))}
+                        className="text-slate-600 hover:text-red-400 text-xs transition-colors">Remove</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input value={newCategory} onChange={e=>setNC(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addC()}
+                  placeholder="New category…" className="flex-1 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-3 py-2 focus:border-indigo-500 transition-colors"/>
+                <button onClick={addC} className="px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90" style={{background:draft.accentColor}}>Add</button>
+              </div>
+            </div>
+            <div className="glass rounded-xl p-4">
+              <div className="text-xs text-slate-500">Incident and Vulnerability categories feed the dedicated tab views. Removing them hides those tabs.</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Task Defaults ── */}
+        {section==="Task Defaults"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Task Defaults</h2>
+            <p className="text-slate-400 text-sm mb-5">Pre-fill values when creating new tasks.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <h3 className="text-slate-300 text-sm font-medium mb-4">New Task Defaults</h3>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Default Priority</label>
+                <select value={draft.defaultPriority} onChange={e=>upd("defaultPriority",e.target.value)} className={selectCls}>
+                  {["Critical","High","Medium","Low"].map(p=><option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Default Category</label>
+                <select value={draft.defaultCategory} onChange={e=>upd("defaultCategory",e.target.value)} className={selectCls}>
+                  {draft.categories.map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Default Assignee</label>
+                <select value={draft.defaultAssignee} onChange={e=>upd("defaultAssignee",e.target.value)} className={selectCls}>
+                  {draft.assignees.map(a=><option key={a}>{a}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="glass rounded-xl p-5">
+              <h3 className="text-slate-300 text-sm font-medium mb-4">SLA Thresholds</h3>
+              <p className="text-slate-500 text-xs mb-4">Tasks without a due date will be considered overdue after this many days based on priority.</p>
+              {[["Critical","slaCritical"],["High","slaHigh"],["Medium","slaMedium"],["Low","slaLow"]].map(([label,key])=>(
+                <div key={key} className="flex items-center justify-between py-2.5 border-b border-slate-800/60 last:border-0">
+                  <span className="text-slate-300 text-sm">{label}</span>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="1" max="365" value={draft[key]}
+                      onChange={e=>upd(key,parseInt(e.target.value)||1)}
+                      className="w-16 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-2 py-1 text-center focus:border-indigo-500 transition-colors"/>
+                    <span className="text-slate-500 text-xs">days</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Notifications ── */}
+        {section==="Notifications"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Notifications</h2>
+            <p className="text-slate-400 text-sm mb-5">Control what appears on your dashboard and badges.</p>
+            <div className="glass rounded-xl p-5 mb-4">
+              <h3 className="text-slate-300 text-sm font-medium mb-3">Dashboard Alerts</h3>
+              <Toggle value={draft.notifyOverdue} onChange={v=>upd("notifyOverdue",v)} label="Overdue task alerts" desc="Show overdue banner on Dashboard"/>
+              <Toggle value={draft.notifyDueSoon} onChange={v=>upd("notifyDueSoon",v)} label="Due soon alerts" desc="Warn when tasks are approaching their due date"/>
+              {draft.notifyDueSoon&&(
+                <div className="pt-3 fade-in">
+                  <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Due soon window</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="1" max="30" value={draft.dueSoonDays}
+                      onChange={e=>upd("dueSoonDays",parseInt(e.target.value)||1)}
+                      className="w-20 bg-slate-800 border border-slate-700 text-white text-sm rounded-md px-2 py-2 text-center focus:border-indigo-500 transition-colors"/>
+                    <span className="text-slate-400 text-sm">days before due date</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Stats ── */}
+        {section==="Stats"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Stats</h2>
+            <p className="text-slate-400 text-sm mb-5">Overview of your board health.</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {[
+                {label:"Total tasks",   value:totalTasks,     color:"text-indigo-400"},
+                {label:"Completed",     value:doneTasks,      color:"text-emerald-400"},
+                {label:"Overdue",       value:overdueTasks,   color:"text-red-400"},
+                {label:"Critical open", value:criticalOpen,   color:"text-pink-400"},
+              ].map(s=>(
+                <div key={s.label} className="glass rounded-xl p-4">
+                  <div className={`text-3xl font-bold ${s.color} mb-1`}>{s.value}</div>
+                  <div className="text-slate-400 text-xs">{s.label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="glass rounded-xl p-5 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-slate-300 text-sm font-medium">Completion rate</h3>
+                <span className="text-white font-bold text-lg">{completionPct}%</span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2">
+                <div className="h-2 rounded-full transition-all duration-700" style={{width:`${completionPct}%`,background:settings.accentColor}}/>
+              </div>
+            </div>
+            {byCategory.length>0&&(
+              <div className="glass rounded-xl p-5 mb-4">
+                <h3 className="text-slate-300 text-sm font-medium mb-3">Tasks by category</h3>
+                {byCategory.map(({name,count})=>(
+                  <div key={name} className="flex items-center gap-3 mb-2">
+                    <span className={`text-xs font-medium w-28 flex-shrink-0 ${cc(name)}`}>{name}</span>
+                    <div className="flex-1 bg-slate-800 rounded-full h-1.5">
+                      <div className="h-1.5 rounded-full" style={{width:`${(count/totalTasks)*100}%`,background:settings.accentColor}}/>
+                    </div>
+                    <span className="text-slate-400 text-xs w-6 text-right">{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {byAssignee.length>0&&(
+              <div className="glass rounded-xl p-5 mb-4">
+                <h3 className="text-slate-300 text-sm font-medium mb-3">Open tasks by assignee</h3>
+                {byAssignee.map(({name,count})=>(
+                  <div key={name} className="flex items-center gap-3 mb-2">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs text-white font-bold flex-shrink-0"
+                      style={{background:settings.accentColor+"99"}}>{initials(name)}</div>
+                    <span className="text-slate-300 text-xs flex-1 truncate">{name}</span>
+                    <span className="text-slate-400 text-xs">{count} open</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="glass rounded-xl p-4">
+              <div className="flex gap-4 text-xs">
+                <div><span className="text-white font-bold">{tasks.filter(t=>t.checklist?.length>0).length}</span><span className="text-slate-400 ml-1">tasks with checklists</span></div>
+                <div><span className="text-white font-bold">{(JSON.stringify({tasks,settings}).length/1024).toFixed(1)} KB</span><span className="text-slate-400 ml-1">total data size</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Data ── */}
+        {section==="Data"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Data Management</h2>
+            <p className="text-slate-400 text-sm mb-5">Export, import, or reset your board data.</p>
+            <div className="glass rounded-xl p-5 mb-3">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Export</h3>
+              <p className="text-slate-500 text-xs mb-3">Download all tasks and settings as a JSON backup file.</p>
+              <button onClick={doExport} className="px-4 py-2 rounded-md text-white text-sm font-medium hover:opacity-90" style={{background:draft.accentColor}}>
+                Export Backup (JSON)
+              </button>
+            </div>
+            <div className="glass rounded-xl p-5 mb-3">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Import</h3>
+              <p className="text-slate-500 text-xs mb-3">Restore from a JSON backup. Overwrites all current tasks and settings.</p>
+              <input ref={fileRef} type="file" accept=".json" onChange={doImport} className="hidden"/>
+              <button onClick={()=>fileRef.current.click()} className="px-4 py-2 rounded-md text-slate-200 text-sm font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700">
+                Import from JSON
+              </button>
+            </div>
+            <div className="glass rounded-xl p-5 mb-3 border border-orange-900/40">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Clear All Tasks</h3>
+              <p className="text-slate-500 text-xs mb-3">Permanently delete every task. Settings are kept. Cannot be undone.</p>
+              <button onClick={()=>setConfirm({title:"Clear all tasks?",message:"Every task will be permanently deleted. Your settings will be kept.",confirmLabel:"Clear All Tasks",onConfirm:()=>{onClearTasks();setConfirm(null);toast("All tasks cleared","warn");}})}
+                className="px-4 py-2 rounded-md text-orange-300 text-sm font-medium bg-orange-950 hover:bg-orange-900 border border-orange-900">
+                Clear Tasks
+              </button>
+            </div>
+            <div className="glass rounded-xl p-5 border border-red-900/40">
+              <h3 className="text-slate-300 text-sm font-medium mb-1">Reset Everything</h3>
+              <p className="text-slate-500 text-xs mb-3">Delete all tasks and reset all settings to defaults. Cannot be undone.</p>
+              <button onClick={()=>setConfirm({title:"Reset everything?",message:"All tasks will be deleted and all settings reset to defaults. This cannot be undone.",confirmLabel:"Reset Everything",onConfirm:()=>{onClearTasks();onSave(DEFAULT_SETTINGS);setConfirm(null);toast("Board reset to defaults","error");}})}
+                className="px-4 py-2 rounded-md text-red-400 text-sm font-medium bg-red-950 hover:bg-red-900 border border-red-900">
+                Reset Everything
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Shortcuts ── */}
+        {section==="Shortcuts"&&(
+          <div className="fade-in max-w-lg">
+            <h2 className="text-white font-semibold text-lg mb-1">Keyboard Shortcuts</h2>
+            <p className="text-slate-400 text-sm mb-5">Speed up your workflow without touching the mouse.</p>
+            <div className="glass rounded-xl p-5">
+              {[
+                ["Navigation",""],
+                ["D","Go to Dashboard"],
+                ["B","Go to Backlog"],
+                ["I","Go to Incidents"],
+                ["V","Go to Vulnerabilities"],
+                ["S","Go to Settings"],
+                ["Tasks",""],
+                ["N","New task"],
+                ["Esc","Close panel / dismiss"],
+                ["Search",""],
+                ["/ or Ctrl+K","Open search"],
+                ["Esc","Close search"],
+              ].map(([key,desc])=> key&&!desc
+                ? <div key={key} className="text-xs text-slate-500 uppercase tracking-wide pt-4 pb-1 first:pt-0">{key}</div>
+                : (
+                  <div key={key+desc} className="flex items-center justify-between py-2.5 border-b border-slate-800/60 last:border-0">
+                    <span className="text-slate-300 text-sm">{desc}</span>
+                    <span className="kbd">{key}</span>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
+      </div>
+      {confirm&&<ConfirmModal {...confirm} danger={true} accentColor={draft.accentColor} onCancel={()=>setConfirm(null)}/>}
+    </div>
+  );
+}
+
+// ── Detail Panel ───────────────────────────────────────────────────────────
+function DetailPanel({ task, onUpdate, onDelete, onClose, settings, toast }) {
+  const [title,setTitle]         = useState(task.title);
+  const [description,setDesc]    = useState(task.description);
+  const [status,setStatus]       = useState(task.status);
+  const [priority,setPriority]   = useState(task.priority);
+  const [category,setCategory]   = useState(task.category);
+  const [assignee,setAssignee]   = useState(task.assignee);
+  const [dueDate,setDueDate]     = useState(task.dueDate);
+  const [checklist,setChecklist] = useState(task.checklist);
+  const [notes,setNotes]         = useState(task.notes||"");
+  const [newCheck,setNewCheck]   = useState("");
+  const [newTag,setNewTag]       = useState("");
+  const [tags,setTags]           = useState(task.tags||[]);
+  const [saved,setSaved]         = useState(false);
+  const [tab,setTab]             = useState("detail");
+  const [confirmDelete,setConfirmDelete] = useState(false);
+
+  useEffect(()=>{
+    setTitle(task.title);setDesc(task.description);setStatus(task.status);
+    setPriority(task.priority);setCategory(task.category);setAssignee(task.assignee);
+    setDueDate(task.dueDate);setChecklist(task.checklist);setNotes(task.notes||"");setTags(task.tags||[]);
+  },[task.id]);
+
+  const save=()=>{
+    onUpdate({...task,title,description,status,priority,category,assignee,dueDate,checklist,notes,tags});
+    setSaved(true);toast("Task saved","success");setTimeout(()=>setSaved(false),1500);
+  };
+  const toggleCheck=id=>setChecklist(cl=>cl.map(c=>c.id===id?{...c,done:!c.done}:c));
+  const addCheck=()=>{if(!newCheck.trim())return;setChecklist(cl=>[...cl,{id:Date.now(),text:newCheck.trim(),done:false}]);setNewCheck("");};
+  const removeCheck=id=>setChecklist(cl=>cl.filter(c=>c.id!==id));
+  const addTag=()=>{const v=newTag.trim();if(!v||tags.includes(v))return;setTags(t=>[...t,v]);setNewTag("");};
+  const removeTag=t=>setTags(ts=>ts.filter(x=>x!==t));
+  const done=checklist.filter(c=>c.done).length;
+  const db=dueBadge(dueDate);
+
+  return (
+    <div className="w-80 flex-shrink-0 border-l border-slate-800/60 flex flex-col slide-in" style={{background:"var(--bg-panel)"}}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800/60 flex-shrink-0">
+        <div className="flex gap-1">
+          {["detail","notes","time"].map(t=>{
+            const totalMins=(task.timeEntries||[]).reduce((s,e)=>s+e.minutes,0);
+            const fmtTotal=m=>{const h=Math.floor(m/60),mn=m%60;return h>0?`${h}h${mn>0?" "+mn+"m":""}`:mn+"m";};
+            return (
+              <button key={t} onClick={()=>setTab(t)}
+                className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors capitalize ${tab===t?"text-white":"text-slate-500 hover:text-slate-300"}`}
+                style={tab===t?{background:settings.accentColor+"33",color:settings.accentColor}:{}}>
+                {t==="notes"?(notes?"notes *":"notes"):t==="time"?(totalMins>0?`time (${fmtTotal(totalMins)})`:"time"):"detail"}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={()=>{navigator.clipboard?.writeText(`#${task.id} ${task.title}`);toast("Copied to clipboard","info");}}
+            className="text-slate-600 hover:text-slate-400 text-xs px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors" title="Copy task ID">#{task.id}</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 w-6 h-6 flex items-center justify-center rounded hover:bg-slate-800 transition-colors">✕</button>
+        </div>
+      </div>
+
+      {tab==="detail"&&(
+        <div className="flex-1 overflow-y-auto">
+          {/* Title */}
+          <div className="px-4 pt-3 pb-2">
+            <input value={title} onChange={e=>setTitle(e.target.value)}
+              className="w-full bg-transparent text-white text-sm font-semibold border-b border-slate-700 pb-1 focus:border-indigo-500 transition-colors"
+              placeholder="Task title"/>
+          </div>
+          {/* Due date warning */}
+          {db&&<div className={`mx-4 mb-2 text-xs px-2.5 py-1.5 rounded-md font-medium ${db}`}>
+            {isOverdue(dueDate)?"Overdue — "+fmtDate(dueDate):"Due soon — "+fmtDate(dueDate)}
+          </div>}
+          {/* Description */}
+          <div className="px-4 py-2">
+            <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Description</label>
+            <textarea value={description} onChange={e=>setDesc(e.target.value)} rows={4}
+              className="w-full bg-slate-800/60 border border-slate-700/60 text-slate-300 text-xs rounded-lg p-2.5 resize-none focus:border-indigo-500 transition-colors"
+              placeholder="Task description…"/>
+          </div>
+          {/* Checklist */}
+          <div className="px-4 py-2">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-slate-500 uppercase tracking-wide">Checklist</label>
+              {checklist.length>0&&<span className="text-xs text-slate-500">{done}/{checklist.length}</span>}
+            </div>
+            {checklist.length>0&&<div className="mb-2 bg-slate-800 rounded-full h-1"><div className="h-1 rounded-full transition-all" style={{width:`${(done/checklist.length)*100}%`,background:settings.accentColor}}/></div>}
+            <div className="flex flex-col gap-1 mt-1">
+              {checklist.map(c=>(
+                <div key={c.id} className="flex items-center gap-2 group py-0.5">
+                  <input type="checkbox" checked={c.done} onChange={()=>toggleCheck(c.id)} className="flex-shrink-0" style={{accentColor:settings.accentColor}}/>
+                  <span className={`text-xs flex-1 ${c.done?"line-through text-slate-500":"text-slate-300"}`}>{c.text}</span>
+                  <button onClick={()=>removeCheck(c.id)} className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 text-xs transition-all">✕</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-1 mt-2">
+              <input value={newCheck} onChange={e=>setNewCheck(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCheck()}
+                className="flex-1 bg-slate-800/60 border border-slate-700/60 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:border-indigo-500 transition-colors"
+                placeholder="Add item…"/>
+              <button onClick={addCheck} className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition-colors">+</button>
+            </div>
+          </div>
+          {/* Tags */}
+          <div className="px-4 py-2">
+            <label className="text-xs text-slate-500 uppercase tracking-wide mb-1.5 block">Tags</label>
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {tags.map(tag=>(
+                <span key={tag} className="flex items-center gap-1 text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700 group cursor-pointer" onClick={()=>removeTag(tag)}>
+                  {tag}<span className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all">✕</span>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-1">
+              <input value={newTag} onChange={e=>setNewTag(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTag()}
+                className="flex-1 bg-slate-800/60 border border-slate-700/60 text-slate-300 text-xs rounded-lg px-2 py-1.5 focus:border-indigo-500 transition-colors"
+                placeholder="Add tag…"/>
+              <button onClick={addTag} className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition-colors">+</button>
+            </div>
+          </div>
+          {/* Divider */}
+          <div className="border-t border-slate-800/60 mx-4 my-2"/>
+          {/* Actions */}
+          <div className="px-4 flex flex-col gap-2">
+            <button onClick={save}
+              className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors ${saved?"bg-emerald-600 text-white":"text-white hover:opacity-90"}`}
+              style={saved?{}:{background:settings.accentColor}}>
+              {saved?"Saved ✓":"Save"}
+            </button>
+            {status!=="Done"&&(
+              <button onClick={()=>{setStatus("Done");onUpdate({...task,title,description,status:"Done",priority,category,assignee,dueDate,checklist,notes,tags});toast("Task marked done","success");}}
+                className="w-full py-2 rounded-lg text-sm font-medium bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/60">
+                Mark as Done ✓
+              </button>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={()=>setConfirmDelete(true)}
+                className="py-2 rounded-lg text-xs font-medium bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-900/60">Delete</button>
+              <button onClick={onClose}
+                className="py-2 rounded-lg text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-400 border border-slate-700/60">Close</button>
+            </div>
+          </div>
+          <div className="border-t border-slate-800/60 mx-4 my-3"/>
+          {/* Metadata */}
+          <div className="px-4 flex flex-col gap-3 pb-5">
+            {[
+              {label:"Status",value:status,set:setStatus,opts:STATUSES},
+              {label:"Priority",value:priority,set:setPriority,opts:PRIORITIES},
+              {label:"Category",value:category,set:setCategory,opts:settings.categories},
+              {label:"Assignee",value:assignee,set:setAssignee,opts:settings.assignees},
+            ].map(({label,value,set,opts})=>(
+              <div key={label}>
+                <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">{label}</label>
+                <select value={value} onChange={e=>set(e.target.value)}
+                  className="w-full bg-slate-800/60 border border-slate-700/60 text-slate-300 text-sm rounded-lg px-2 py-1.5 focus:border-indigo-500 transition-colors">
+                  {opts.map(o=><option key={o}>{o}</option>)}
+                </select>
+              </div>
+            ))}
+            <div>
+              <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Due Date</label>
+              <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)}
+                className="w-full bg-slate-800/60 border border-slate-700/60 text-slate-300 text-sm rounded-lg px-2 py-1.5 focus:border-indigo-500 transition-colors"/>
+            </div>
+            <div className="text-xs text-slate-700">Created {task.createdAt}</div>
+          </div>
+        </div>
+      )}
+
+      {tab==="notes"&&(
+        <div className="flex-1 flex flex-col p-4">
+          <label className="text-xs text-slate-500 uppercase tracking-wide mb-2">Notes</label>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+            className="flex-1 bg-slate-800/40 border border-slate-700/60 text-slate-300 text-sm rounded-xl p-3 resize-none focus:border-indigo-500 transition-colors"
+            placeholder="Free-form notes, post-mortem details, links…"/>
+          <button onClick={save}
+            className={`mt-3 py-2 rounded-lg text-sm font-semibold transition-colors ${saved?"bg-emerald-600 text-white":"text-white hover:opacity-90"}`}
+            style={saved?{}:{background:settings.accentColor}}>
+            {saved?"Saved ✓":"Save Notes"}
+          </button>
+        </div>
+      )}
+
+      {tab==="time"&&(
+        <TimeTracker task={task} onUpdate={onUpdate} settings={settings}/>
+      )}
+
+      {confirmDelete&&(
+        <ConfirmModal title="Delete task?" message={`"${task.title}" will be permanently removed.`}
+          confirmLabel="Delete" danger={true} accentColor={settings.accentColor}
+          onConfirm={()=>{setConfirmDelete(false);onDelete(task.id);toast("Task deleted","error");}}
+          onCancel={()=>setConfirmDelete(false)}/>
+      )}
+    </div>
+  );
+}
+
+// ── New Task Modal ─────────────────────────────────────────────────────────
+function NewTaskModal({ onAdd, onClose, settings, toast }) {
+  const [title,setTitle]         = useState("");
+  const [description,setDesc]    = useState("");
+  const [status,setStatus]       = useState("Todo");
+  const [priority,setPriority]   = useState(settings.defaultPriority||"Medium");
+  const [category,setCategory]   = useState(settings.defaultCategory||settings.categories[0]||"");
+  const [assignee,setAssignee]   = useState(settings.defaultAssignee||settings.assignees[0]||"");
+  const [dueDate,setDueDate]     = useState("");
+
+  const add=()=>{
+    if(!title.trim())return;
+    onAdd({title:title.trim(),description,status,priority,category,assignee,dueDate,tags:[],checklist:[],notes:""});
+    toast("Task created","success");onClose();
+  };
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 fade-in"
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="glass rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <h3 className="text-white font-semibold mb-4">New Task</h3>
+        <div className="flex flex-col gap-3">
+          <input value={title} onChange={e=>setTitle(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 focus:border-indigo-500 transition-colors"
+            placeholder="Task title *" autoFocus/>
+          <textarea value={description} onChange={e=>setDesc(e.target.value)} rows={3}
+            className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-xl px-3 py-2.5 resize-none focus:border-indigo-500 transition-colors"
+            placeholder="Description (optional)"/>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              {label:"Status",value:status,set:setStatus,opts:STATUSES},
+              {label:"Priority",value:priority,set:setPriority,opts:PRIORITIES},
+              {label:"Category",value:category,set:setCategory,opts:settings.categories},
+              {label:"Assignee",value:assignee,set:setAssignee,opts:settings.assignees},
+            ].map(({label,value,set,opts})=>(
+              <div key={label}>
+                <label className="text-xs text-slate-500 mb-1 block">{label}</label>
+                <select value={value} onChange={e=>set(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-xl px-2 py-2 focus:border-indigo-500 transition-colors">
+                  {opts.map(o=><option key={o}>{o}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 mb-1 block">Due Date</label>
+            <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 text-slate-300 text-sm rounded-xl px-2 py-2 focus:border-indigo-500 transition-colors"/>
+          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={add} className="flex-1 py-2.5 rounded-xl text-white text-sm font-medium hover:opacity-90 transition-all" style={{background:settings.accentColor}}>Create Task</button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-700">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Login Page ─────────────────────────────────────────────────────────────
+function LoginPage({ onAuth, accentColor }) {
+  // mode: "login" | "register" | "forgot" | "reset"
+  const [mode,setMode]       = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("reset") ? "reset" : "login";
+  });
+  const [resetToken]         = useState(() => new URLSearchParams(window.location.search).get("reset") || "");
+  const [email,setEmail]     = useState("");
+  const [password,setPass]   = useState("");
+  const [confirmPass,setCP]  = useState("");
+  const [name,setName]       = useState("");
+  const [showPass,setShowP]  = useState(false);
+  const [showCP,setShowCP]   = useState(false);
+  const [error,setError]     = useState("");
+  const [info,setInfo]       = useState("");
+  const [loading,setLoad]    = useState(false);
+  const [msalLoading,setML]  = useState(false);
+
+  const switchMode = m => { setMode(m); setError(""); setInfo(""); setPass(""); setCP(""); };
+
+  // ── Submit handler ───────────────────────────────────────────────────
+  const submit = async () => {
+    setError(""); setInfo("");
+
+    if (mode==="reset") {
+      if (!password) { setError("Enter a new password."); return; }
+      if (password.length<8) { setError("Password must be at least 8 characters."); return; }
+      if (password!==confirmPass) { setError("Passwords do not match."); return; }
+      setLoad(true);
+      try {
+        await AuthService.resetPassword(resetToken, password);
+        setInfo("Password updated. You can now sign in.");
+        setPass(""); setCP("");
+        // Strip the token from the URL so a refresh doesn't re-trigger reset mode
+        window.history.replaceState({}, "", window.location.pathname);
+        setTimeout(() => switchMode("login"), 2000);
+      } catch(e) { setError(e.message); }
+      finally { setLoad(false); }
+      return;
+    }
+
+    if (mode==="forgot") {
+      if (!email) { setError("Enter your email address."); return; }
+      setLoad(true);
+      try {
+        await AuthService.forgotPassword(email);
+        setInfo(`If an account exists for ${email}, a reset link has been sent.`);
+        setEmail("");
+      } catch(e) { setError(e.message); }
+      finally { setLoad(false); }
+      return;
+    }
+
+    if (!email||!password) { setError("Email and password are required."); return; }
+    if (mode==="register"&&!name) { setError("Display name is required."); return; }
+    if (mode==="register"&&password.length<8) { setError("Password must be at least 8 characters."); return; }
+    setLoad(true);
+    try {
+      const user = mode==="login"
+        ? await AuthService.login(email,password)
+        : await AuthService.register(email,password,name);
+      onAuth(user);
+    } catch(e) { setError(e.message); }
+    finally { setLoad(false); }
+  };
+
+  // ── Microsoft SSO ────────────────────────────────────────────────────
+  const msalSignIn = async () => {
+    setML(true); setError("");
+    try {
+      if (typeof msal === "undefined") {
+        throw new Error("Sign-in script failed to load. Try disabling browser tracking protection for this site, then refresh.");
+      }
+      const user = await AuthService.msalLogin();
+      onAuth(user);
+    } catch(e) { setError(e.message); }
+    finally { setML(false); }
+  };
+
+  // Password strength (register only)
+  const strength = password.length===0?0:password.length<6?1:password.length<10?2:/[^a-zA-Z0-9]/.test(password)&&password.length>=10?4:3;
+  const strengthLabel = ["","Weak","Fair","Good","Strong"][strength];
+  const strengthColor = ["","#ef4444","#f97316","#eab308","#22c55e"][strength];
+
+  const inputCls = "w-full bg-slate-800/80 border border-slate-700 text-white text-sm rounded-xl px-3 py-2.5 focus:border-indigo-500 transition-colors placeholder-slate-500";
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{background:"var(--bg-base)"}}>
+      {/* Background decoration */}
+      <div style={{position:"fixed",inset:0,backgroundImage:"linear-gradient(rgba(99,102,241,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.03) 1px,transparent 1px)",backgroundSize:"48px 48px",pointerEvents:"none"}}/>
+      <div style={{position:"fixed",top:"-20%",left:"50%",transform:"translateX(-50%)",width:"600px",height:"400px",background:"radial-gradient(ellipse,rgba(99,102,241,.1) 0%,transparent 70%)",pointerEvents:"none"}}/>
+
+      <div className="w-full max-w-sm relative z-10 fade-in">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+            style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 0 0 1px rgba(99,102,241,.3),0 8px 32px rgba(99,102,241,.15)`}}>
+            <svg width="28" height="28" viewBox="0 0 14 14" fill="none">
+              <rect x="1" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+              <rect x="8" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+              <rect x="1" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+              <rect x="8" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Ops<span style={{color:accentColor}}>Board</span></h1>
+          <p className="text-slate-500 text-sm mt-1">DevOps &amp; Security task management</p>
+        </div>
+
+        {/* Card */}
+        <div className="rounded-2xl p-7" style={{background:"rgba(15,23,42,.8)",backdropFilter:"blur(16px)",border:"1px solid rgba(99,102,241,.18)",boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}>
+
+          {/* Mode toggle — login/register only */}
+          {mode==="login" || mode==="register" ? (
+            <div className="flex bg-slate-800/80 rounded-xl p-1 mb-6">
+              {["login","register"].map(m=>(
+                <button key={m} onClick={()=>switchMode(m)}
+                  className="flex-1 py-1.5 rounded-lg text-sm font-medium transition-all"
+                  style={mode===m?{background:accentColor,color:"#fff",boxShadow:`0 2px 8px ${accentColor}66`}:{color:"#64748b"}}>
+                  {m==="login"?"Sign In":"Register"}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button onClick={()=>switchMode("login")} className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 text-sm mb-5 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
+              Back to sign in
+            </button>
+          )}
+
+          <h2 className="text-white font-semibold text-base mb-1">
+            {mode==="login"?"Welcome back":mode==="register"?"Create your account":mode==="reset"?"Set a new password":"Reset your password"}
+          </h2>
+          <p className="text-slate-500 text-xs mb-5">
+            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":mode==="reset"?"Choose a strong password for your account.":"We'll send a reset link to your email."}
+          </p>
+
+          {/* Error / info banners */}
+          {error && (
+            <div className="flex items-start gap-2 bg-red-950/70 border border-red-800/60 text-red-300 text-xs rounded-xl px-3 py-2.5 mb-4">
+              <span className="flex-shrink-0 mt-0.5">⚠</span><span>{error}</span>
+            </div>
+          )}
+          {info && (
+            <div className="flex items-start gap-2 bg-emerald-950/70 border border-emerald-800/60 text-emerald-300 text-xs rounded-xl px-3 py-2.5 mb-4">
+              <span className="flex-shrink-0 mt-0.5">✓</span><span>{info}</span>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-4">
+            {/* Reset mode — new password + confirm only */}
+            {mode==="reset" ? (
+              <>
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">New Password</label>
+                  <div className="relative">
+                    <input type={showPass?"text":"password"} value={password} autoFocus
+                      onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
+                      className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    <button type="button" onClick={()=>setShowP(p=>!p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
+                      {showPass?"Hide":"Show"}
+                    </button>
+                  </div>
+                  {password.length>0 && (
+                    <div className="mt-2 fade-in">
+                      <div className="flex gap-1 mb-1">
+                        {[1,2,3,4].map(i=>(
+                          <div key={i} className="flex-1 h-1 rounded-full transition-all"
+                            style={{background:strength>=i?strengthColor:"#1e293b"}}/>
+                        ))}
+                      </div>
+                      <p className="text-xs" style={{color:strengthColor||"#64748b"}}>{strengthLabel}</p>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Confirm Password</label>
+                  <div className="relative">
+                    <input type={showCP?"text":"password"} value={confirmPass}
+                      onChange={e=>setCP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
+                      className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    <button type="button" onClick={()=>setShowCP(p=>!p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
+                      {showCP?"Hide":"Show"}
+                    </button>
+                  </div>
+                  {confirmPass.length>0 && password!==confirmPass && (
+                    <p className="text-red-400 text-xs mt-1">Passwords do not match.</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Display name — register only */}
+                {mode==="register" && (
+                  <div className="fade-in">
+                    <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Display Name</label>
+                    <input value={name} onChange={e=>setName(e.target.value)} autoFocus
+                      className={inputCls} placeholder="Your name"/>
+                  </div>
+                )}
+
+                {/* Email */}
+                <div>
+                  <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Email</label>
+                  <div className="relative">
+                    <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                      onKeyDown={e=>e.key==="Enter"&&submit()}
+                      autoFocus={mode==="login"||mode==="forgot"}
+                      className={inputCls+" pl-9"} placeholder="you@yourdomain.com"/>
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Password — not shown on forgot */}
+                {mode!=="forgot" && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs text-slate-400 uppercase tracking-widest font-medium">Password</label>
+                      {mode==="login" && (
+                        <button onClick={()=>switchMode("forgot")}
+                          className="text-xs transition-colors hover:opacity-80" style={{color:accentColor}}>
+                          Forgot password?
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input type={showPass?"text":"password"} value={password}
+                        onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}
+                        className={inputCls+" pl-9 pr-14"} placeholder="••••••••"/>
+                      <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                      </svg>
+                      <button type="button" onClick={()=>setShowP(p=>!p)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs transition-colors select-none">
+                        {showPass?"Hide":"Show"}
+                      </button>
+                    </div>
+                    {mode==="register" && password.length>0 && (
+                      <div className="mt-2 fade-in">
+                        <div className="flex gap-1 mb-1">
+                          {[1,2,3,4].map(i=>(
+                            <div key={i} className="flex-1 h-1 rounded-full transition-all"
+                              style={{background:strength>=i?strengthColor:"#1e293b"}}/>
+                          ))}
+                        </div>
+                        <p className="text-xs" style={{color:strengthColor||"#64748b"}}>{strengthLabel}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Primary submit button */}
+          <button onClick={submit} disabled={loading}
+            className="w-full mt-5 py-2.5 rounded-xl text-white text-sm font-semibold transition-all hover:opacity-90 active:scale-[.98] disabled:opacity-50"
+            style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 4px 16px ${accentColor}55`}}>
+            {loading?"Please wait…"
+              :mode==="login"?"Sign In →"
+              :mode==="register"?"Create Account →"
+              :mode==="reset"?"Set New Password →"
+              :"Send Reset Link →"}
+          </button>
+
+          {/* Divider + Microsoft SSO — not shown on forgot or reset */}
+          {mode!=="forgot" && mode!=="reset" && (
+            <>
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-slate-800"/>
+                <span className="text-slate-600 text-xs">or</span>
+                <div className="flex-1 h-px bg-slate-800"/>
+              </div>
+              <button onClick={msalSignIn} disabled={msalLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-medium border transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 hover:bg-slate-700/60"
+                style={{background:"rgba(30,41,59,.8)",borderColor:"#334155",color:"#cbd5e1"}}>
+                {msalLoading
+                  ? <span className="text-xs text-slate-400">Opening sign-in…</span>
+                  : <>
+                      {/* Microsoft logo */}
+                      <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 21 21" fill="none">
+                        <rect x="1"  y="1"  width="9" height="9" fill="#f25022"/>
+                        <rect x="11" y="1"  width="9" height="9" fill="#7fba00"/>
+                        <rect x="1"  y="11" width="9" height="9" fill="#00a4ef"/>
+                        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                      </svg>
+                      Sign in with work account
+                    </>
+                }
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-center gap-3 mt-5">
+          <span className="flex items-center gap-1.5 text-xs text-slate-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
+            Secured
+          </span>
+          <span className="text-slate-700">·</span>
+          <span className="text-xs text-slate-600">Data encrypted in transit</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Storage Status Badge ───────────────────────────────────────────────────
+function StorageBadge({ mode }) {
+  const cfg = {
+    azure:  { dot:"bg-emerald-500", label:"Synced",  title:"Data is being saved to the cloud" },
+    local:  { dot:"bg-yellow-500",  label:"Offline", title:"Working offline — sign in to sync your data" },
+    memory: { dot:"bg-red-500",     label:"Unsaved", title:"Data will be lost on refresh" },
+  }[mode] || { dot:"bg-slate-500", label:"?", title:"Unknown storage mode" };
+  return (
+    <span title={cfg.title} className="hidden md:flex items-center gap-1.5 text-xs text-slate-500 bg-slate-800/60 border border-slate-700/50 px-2 py-1 rounded-full cursor-default">
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot} ${mode==="azure"?"pulse-dot":""}`}/>
+      {cfg.label}
+    </span>
+  );
+}
+
+
+// ── Tutorial Overlay ───────────────────────────────────────────────────────
+function Tutorial({ onComplete, accentColor, userName }) {
+  const [step, setStep] = useState(0);
+
+  const steps = [
+    {
+      icon: (
+        <svg width="32" height="32" viewBox="0 0 14 14" fill="none">
+          <rect x="1" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+          <rect x="8" y="1" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+          <rect x="1" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.6"/>
+          <rect x="8" y="8" width="5" height="5" rx="1.2" fill="white" opacity="0.95"/>
+        </svg>
+      ),
+      title: `Welcome to OpsBoard${userName ? ", " + userName.split(" ")[0] : ""}!`,
+      body: "OpsBoard is your central hub for managing DevOps and security tasks — incidents, vulnerabilities, deployments, and more — all in one place.",
+      tip: null,
+    },
+    {
+      icon: (
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+        </svg>
+      ),
+      title: "Your workspace, your tabs",
+      body: "Use the tab bar to switch between views. Dashboard gives you an overview, Backlog is your full task list, Board is a Kanban view, and Incidents and Vulnerabilities are filtered views for those categories.",
+      tip: "Tip: keyboard shortcuts — B for Backlog, D for Dashboard, V for Vulnerabilities, I for Incidents, S for Settings.",
+    },
+    {
+      icon: (
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/>
+        </svg>
+      ),
+      title: "Creating your first task",
+      body: "Hit the + button in the top bar (or press N on your keyboard) to create a task. Give it a title, priority, category, due date, and assignee. You can also add checklists and notes inside each task.",
+      tip: "Tip: set categories like Incident, Vulnerability, Deployment, or Security to keep things organised and routed to the right views.",
+    },
+    {
+      icon: (
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7C5 4 4 5 4 7zm4 0h8M8 11h8M8 15h5"/>
+        </svg>
+      ),
+      title: "Your data syncs across devices",
+      body: "Everything you create is saved to the cloud and will appear on any device you sign in to. The sync indicator in the top bar shows when your data is live.",
+      tip: "Tip: go to Settings to set your name, initials, accent colour, and add team members as assignees.",
+    },
+  ];
+
+  const current = steps[step];
+  const isLast  = step === steps.length - 1;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{background:"rgba(10,15,30,0.92)",backdropFilter:"blur(6px)"}}>
+      <div className="w-full max-w-md fade-in"
+        style={{background:"rgba(15,23,42,0.95)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:"1.25rem",boxShadow:"0 24px 64px rgba(0,0,0,0.6)"}}>
+
+        {/* Progress bar */}
+        <div className="flex gap-1.5 p-5 pb-0">
+          {steps.map((_,i)=>(
+            <div key={i} className="flex-1 h-1 rounded-full transition-all duration-500"
+              style={{background: i<=step ? accentColor : "#1e293b"}}/>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="p-7">
+          {/* Icon */}
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+            style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 0 0 1px rgba(99,102,241,.2),0 8px 24px rgba(99,102,241,.2)`}}>
+            {current.icon}
+          </div>
+
+          {/* Step counter */}
+          <p className="text-xs font-medium mb-2" style={{color:accentColor}}>
+            Step {step+1} of {steps.length}
+          </p>
+
+          <h2 className="text-white font-semibold text-xl mb-3 leading-snug">{current.title}</h2>
+          <p className="text-slate-400 text-sm leading-relaxed mb-4">{current.body}</p>
+
+          {current.tip && (
+            <div className="rounded-xl px-4 py-3 text-xs text-slate-400 leading-relaxed"
+              style={{background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.15)"}}>
+              {current.tip}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-7 pb-6 gap-3">
+          <button onClick={onComplete}
+            className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
+            Skip tutorial
+          </button>
+          <div className="flex gap-2">
+            {step > 0 && (
+              <button onClick={()=>setStep(s=>s-1)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors border border-slate-700">
+                Back
+              </button>
+            )}
+            <button onClick={()=>isLast ? onComplete() : setStep(s=>s+1)}
+              className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-[.98]"
+              style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 4px 12px ${accentColor}44`}}>
+              {isLast ? "Get started →" : "Next →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ── What's New Overlay ─────────────────────────────────────────────────────
+function WhatsNew({ onClose, accentColor }) {
+  const changes = [
+    {
+      icon: "⏱",
+      title: "Time tracking",
+      desc: "Log time directly on tasks. Start a live timer or add manual entries. Total time shows in the task header.",
+    },
+    {
+      icon: "☀",
+      title: "Light mode",
+      desc: "Toggle between dark and light mode in General settings. Your preference is saved automatically.",
+    },
+    {
+      icon: "⚙",
+      title: "Expanded settings",
+      desc: "New sections for Task Defaults, SLA thresholds, Notifications, and a Stats panel with board health metrics.",
+    },
+    {
+      icon: "👤",
+      title: "Profile dropdown",
+      desc: "Settings, data management, and sign out are now all in the profile menu in the top bar.",
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{background:"rgba(10,15,30,0.88)",backdropFilter:"blur(6px)"}}>
+      <div className="w-full max-w-md fade-in rounded-2xl overflow-hidden"
+        style={{background:"var(--bg-panel)",border:"1px solid rgba(99,102,241,0.2)",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"}}>
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b" style={{borderColor:"var(--border-subtle)"}}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold mb-1" style={{color:accentColor}}>VERSION 1.1.0</div>
+              <h2 className="text-lg font-semibold" style={{color:"var(--text)"}}>What's new in OpsBoard</h2>
+            </div>
+            <button onClick={onClose}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-sm transition-colors"
+              style={{color:"var(--text-faint)",background:"var(--bg-input-solid)"}}>✕</button>
+          </div>
+        </div>
+        {/* Changes */}
+        <div className="px-6 py-4 flex flex-col gap-4">
+          {changes.map((c,i)=>(
+            <div key={i} className="flex gap-4">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                style={{background:`rgba(99,102,241,0.12)`,border:"1px solid rgba(99,102,241,0.2)"}}>
+                {c.icon}
+              </div>
+              <div>
+                <div className="text-sm font-semibold mb-0.5" style={{color:"var(--text)"}}>{c.title}</div>
+                <div className="text-xs leading-relaxed" style={{color:"var(--text-muted)"}}>{c.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Footer */}
+        <div className="px-6 pb-6 pt-2">
+          <button onClick={onClose}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+            style={{background:`linear-gradient(135deg,${accentColor},#818cf8)`}}>
+            Got it — let's go →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Time Tracker ───────────────────────────────────────────────────────────
+function TimeTracker({ task, onUpdate, settings }) {
+  const [entries, setEntries]   = useState(task.timeEntries||[]);
+  const [running, setRunning]   = useState(false);
+  const [startTs, setStartTs]   = useState(null);
+  const [elapsed, setElapsed]   = useState(0);
+  const [manualH, setManualH]   = useState("");
+  const [manualM, setManualM]   = useState("");
+  const [manualNote, setMNote]  = useState("");
+  const intervalRef = useRef();
+
+  useEffect(()=>{
+    setEntries(task.timeEntries||[]);
+    setRunning(false); setStartTs(null); setElapsed(0);
+    clearInterval(intervalRef.current);
+  },[task.id]);
+
+  useEffect(()=>{
+    if(running){
+      intervalRef.current = setInterval(()=>setElapsed(Math.floor((Date.now()-startTs)/1000)),1000);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return ()=>clearInterval(intervalRef.current);
+  },[running]);
+
+  const fmtSecs = s => {
+    const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+    return h>0?`${h}h ${m}m`:`${m}m ${sec}s`;
+  };
+  const fmtEntry = mins => {
+    const h=Math.floor(mins/60), m=mins%60;
+    return h>0?`${h}h ${m>0?m+"m":""}`:m+"m";
+  };
+
+  const totalMins = entries.reduce((s,e)=>s+e.minutes,0);
+
+  const startTimer = () => { setStartTs(Date.now()); setElapsed(0); setRunning(true); };
+  const stopTimer  = () => {
+    setRunning(false);
+    const mins = Math.max(1, Math.round(elapsed/60));
+    const newEntry = { id:Date.now(), minutes:mins, note:"Timer", date:today() };
+    const updated = [...entries, newEntry];
+    setEntries(updated);
+    onUpdate({...task, timeEntries:updated});
+    setElapsed(0);
+  };
+
+  const addManual = () => {
+    const h=parseInt(manualH)||0, m=parseInt(manualM)||0;
+    const total=h*60+m;
+    if(total<=0) return;
+    const newEntry = { id:Date.now(), minutes:total, note:manualNote.trim()||"Manual entry", date:today() };
+    const updated = [...entries, newEntry];
+    setEntries(updated); onUpdate({...task,timeEntries:updated});
+    setManualH(""); setManualM(""); setMNote("");
+  };
+
+  const removeEntry = id => {
+    const updated = entries.filter(e=>e.id!==id);
+    setEntries(updated); onUpdate({...task,timeEntries:updated});
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4">
+      {/* Total */}
+      <div className="rounded-xl p-4 mb-4 flex items-center justify-between"
+        style={{background:`rgba(99,102,241,0.08)`,border:"1px solid rgba(99,102,241,0.15)"}}>
+        <div>
+          <div className="text-xs mb-0.5" style={{color:"var(--text-faint)"}}>Total logged</div>
+          <div className="text-2xl font-bold" style={{color:"var(--text)"}}>{fmtEntry(totalMins)||"0m"}</div>
+        </div>
+        <div className="text-xs" style={{color:"var(--text-faint)"}}>{entries.length} entr{entries.length===1?"y":"ies"}</div>
+      </div>
+
+      {/* Live timer */}
+      <div className="glass rounded-xl p-4 mb-4">
+        <div className="text-xs uppercase tracking-wide mb-3" style={{color:"var(--text-faint)"}}>Live timer</div>
+        {running&&(
+          <div className="text-2xl font-bold text-center mb-3 font-mono" style={{color:settings.accentColor}}>
+            {fmtSecs(elapsed)}
+          </div>
+        )}
+        <button
+          onClick={running?stopTimer:startTimer}
+          className="w-full py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-90"
+          style={{background:running?"#ef4444":settings.accentColor}}>
+          {running?"Stop & Save":"Start Timer"}
+        </button>
+      </div>
+
+      {/* Manual entry */}
+      <div className="glass rounded-xl p-4 mb-4">
+        <div className="text-xs uppercase tracking-wide mb-3" style={{color:"var(--text-faint)"}}>Log time manually</div>
+        <div className="flex gap-2 mb-2">
+          <div className="flex-1">
+            <label className="text-xs mb-1 block" style={{color:"var(--text-faint)"}}>Hours</label>
+            <input type="number" min="0" max="24" value={manualH} onChange={e=>setManualH(e.target.value)}
+              className="w-full rounded-lg px-2 py-1.5 text-sm text-center border focus:outline-none focus:border-indigo-500"
+              style={{background:"var(--bg-input-solid)",borderColor:"var(--border)",color:"var(--text)"}}
+              placeholder="0"/>
+          </div>
+          <div className="flex-1">
+            <label className="text-xs mb-1 block" style={{color:"var(--text-faint)"}}>Minutes</label>
+            <input type="number" min="0" max="59" value={manualM} onChange={e=>setManualM(e.target.value)}
+              className="w-full rounded-lg px-2 py-1.5 text-sm text-center border focus:outline-none focus:border-indigo-500"
+              style={{background:"var(--bg-input-solid)",borderColor:"var(--border)",color:"var(--text)"}}
+              placeholder="30"/>
+          </div>
+        </div>
+        <input value={manualNote} onChange={e=>setMNote(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addManual()}
+          className="w-full rounded-lg px-2 py-1.5 text-xs border mb-2 focus:outline-none focus:border-indigo-500"
+          style={{background:"var(--bg-input-solid)",borderColor:"var(--border)",color:"var(--text)"}}
+          placeholder="Note (optional)"/>
+        <button onClick={addManual}
+          className="w-full py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-all"
+          style={{background:settings.accentColor}}>Add Entry</button>
+      </div>
+
+      {/* Log */}
+      {entries.length>0&&(
+        <div className="glass rounded-xl p-4">
+          <div className="text-xs uppercase tracking-wide mb-3" style={{color:"var(--text-faint)"}}>Log</div>
+          <div className="flex flex-col gap-2">
+            {[...entries].reverse().map(e=>(
+              <div key={e.id} className="flex items-center justify-between group">
+                <div>
+                  <span className="text-sm font-medium" style={{color:"var(--text)"}}>{fmtEntry(e.minutes)}</span>
+                  <span className="text-xs ml-2" style={{color:"var(--text-faint)"}}>{e.note}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={{color:"var(--text-faint)"}}>{e.date}</span>
+                  <button onClick={()=>removeEntry(e.id)}
+                    className="opacity-0 group-hover:opacity-100 text-xs transition-all hover:text-red-400"
+                    style={{color:"var(--text-faint)"}}>✕</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── OpsBoard Assistant ─────────────────────────────────────────────────────
+function ChatBot({ tasks, settings, onAdd, onUpdate, onSwitchTab, onSelect, toast, user }) {
+  const [open, setOpen]         = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const bottomRef = useRef();
+  const inputRef  = useRef();
+
+  useEffect(()=>{ if(open) setTimeout(()=>inputRef.current?.focus(),100); },[open]);
+  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:"smooth"}); },[messages]);
+
+  // Greeting on first open
+  useEffect(()=>{
+    if(open && messages.length===0){
+      setMessages([{role:"assistant",content:`Hi${user?.name?" "+user.name.split(" ")[0]:""}! I'm your OpsBoard assistant. I can create tasks, update them, log time, navigate to views, or answer questions about your board. What do you need?`}]);
+    }
+  },[open]);
+
+  const systemPrompt = ()=>`You are OpsBoard Assistant, an AI built into OpsBoard — a DevOps and security task management app.
+
+Today's date: ${new Date().toISOString().split("T")[0]}
+Current user: ${user?.name||"Unknown"} (${user?.email||""})
+Total tasks: ${tasks.length}
+Open tasks: ${tasks.filter(t=>t.status!=="Done").length}
+Overdue tasks: ${tasks.filter(t=>t.status!=="Done"&&t.dueDate&&t.dueDate<new Date().toISOString().split("T")[0]).length}
+
+Available statuses: ${["Todo","In Progress","Review","Blocked","Done"].join(", ")}
+Available priorities: ${["Critical","High","Medium","Low"].join(", ")}
+Available categories: ${settings.categories.join(", ")}
+Available assignees: ${settings.assignees.join(", ")}
+
+Current tasks (JSON):
+${JSON.stringify(tasks.map(t=>({id:t.id,title:t.title,status:t.status,priority:t.priority,category:t.category,assignee:t.assignee,dueDate:t.dueDate,timeEntries:t.timeEntries||[]})),null,2)}
+
+You can perform actions by including a JSON block in your response. ALWAYS wrap action JSON in a markdown code block with the language tag "action".
+Available actions:
+
+1. Create a task:
+\`\`\`action
+{"type":"create_task","title":"...","description":"...","priority":"High","category":"Security","assignee":"Unassigned","status":"Todo","dueDate":"2026-04-20","tags":[],"checklist":[],"notes":""}
+\`\`\`
+
+2. Update a task (only include fields you want to change):
+\`\`\`action
+{"type":"update_task","id":3,"status":"Done"}
+\`\`\`
+
+3. Log time on a task:
+\`\`\`action
+{"type":"log_time","id":3,"minutes":90,"note":"Investigation and patch"}
+\`\`\`
+
+4. Navigate to a tab:
+\`\`\`action
+{"type":"navigate","tab":"Dashboard"}
+\`\`\`
+Available tabs: Dashboard, Backlog, Board, Incidents, Vulnerabilities, Settings
+
+5. Open a task in the detail panel:
+\`\`\`action
+{"type":"open_task","id":3}
+\`\`\`
+
+You can include multiple action blocks in one response. Always confirm what you did in natural language after the action blocks.
+Be concise. If asked for a summary, provide it clearly. If asked to do something impossible, explain why.`;
+
+  const executeAction = (action) => {
+    try {
+      const a = JSON.parse(action);
+      switch(a.type) {
+        case "create_task": {
+          const id = Math.max(...tasks.map(t=>t.id), 0) + 1;
+          onAdd({
+            title:       a.title||"New task",
+            description: a.description||"",
+            status:      a.status||"Todo",
+            priority:    a.priority||"Medium",
+            category:    a.category||settings.categories[0]||"Security",
+            assignee:    a.assignee||settings.assignees[0]||"Unassigned",
+            dueDate:     a.dueDate||"",
+            tags:        a.tags||[],
+            checklist:   a.checklist||[],
+            notes:       a.notes||"",
+            timeEntries: [],
+          });
+          return `Created task: "${a.title}"`;
+        }
+        case "update_task": {
+          const t = tasks.find(x=>x.id===a.id);
+          if(!t) return `Task #${a.id} not found.`;
+          const updated = {...t};
+          if(a.title)    updated.title    = a.title;
+          if(a.status)   updated.status   = a.status;
+          if(a.priority) updated.priority = a.priority;
+          if(a.category) updated.category = a.category;
+          if(a.assignee) updated.assignee = a.assignee;
+          if(a.dueDate!==undefined) updated.dueDate = a.dueDate;
+          if(a.notes!==undefined)   updated.notes   = a.notes;
+          onUpdate(updated);
+          return `Updated task #${a.id}: "${t.title}"`;
+        }
+        case "log_time": {
+          const t = tasks.find(x=>x.id===a.id);
+          if(!t) return `Task #${a.id} not found.`;
+          const entry = {id:Date.now(),minutes:a.minutes||0,note:a.note||"Logged via assistant",date:new Date().toISOString().split("T")[0]};
+          onUpdate({...t,timeEntries:[...(t.timeEntries||[]),entry]});
+          const h=Math.floor(a.minutes/60),m=a.minutes%60;
+          return `Logged ${h>0?h+"h ":""}${m>0?m+"m":""} on "${t.title}"`;
+        }
+        case "navigate": {
+          onSwitchTab(a.tab);
+          return `Navigated to ${a.tab}`;
+        }
+        case "open_task": {
+          const t = tasks.find(x=>x.id===a.id);
+          if(!t) return `Task #${a.id} not found.`;
+          onSelect(a.id);
+          return `Opened task: "${t.title}"`;
+        }
+        default:
+          return `Unknown action: ${a.type}`;
+      }
+    } catch(e) {
+      return `Action error: ${e.message}`;
+    }
+  };
+
+  const send = async () => {
+    const text = input.trim();
+    if(!text || loading) return;
+    setInput("");
+
+    const userMsg = {role:"user", content:text};
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${AZURE.functionsUrl}/chat`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          system: systemPrompt(),
+          messages: newMessages.map(m=>({role:m.role,content:m.content})),
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(()=>({}));
+        throw new Error(errData.error || `API error ${res.status}`);
+      }
+
+      const data = await res.json();
+      const rawText = data.content?.[0]?.text || "Sorry, I didn't get a response.";
+
+      // Extract and execute action blocks
+      const actionRegex = /```action\s*([\s\S]*?)```/g;
+      let match;
+      const actionResults = [];
+      while((match=actionRegex.exec(rawText))!==null){
+        const result = executeAction(match[1].trim());
+        actionResults.push(result);
+      }
+
+      // Strip action blocks from displayed text
+      const displayText = rawText.replace(/```action[\s\S]*?```/g,"").trim();
+
+      // Show toast for each action
+      actionResults.forEach(r=>toast(r,"success"));
+
+      setMessages(m=>[...m,{role:"assistant",content:displayText, actions:actionResults}]);
+    } catch(e) {
+      setMessages(m=>[...m,{role:"assistant",content:"Sorry, I ran into an error. Please try again."}]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const suggestions = [
+    "What tasks are overdue?",
+    "Create a critical security task",
+    "Summarise my board",
+    "Show me the Dashboard",
+  ];
+
+  return (
+    <>
+      {/* Floating button */}
+      <button
+        onClick={()=>setOpen(o=>!o)}
+        className="fixed bottom-5 right-5 w-12 h-12 rounded-full shadow-lg flex items-center justify-center z-40 transition-all hover:scale-110 active:scale-95"
+        style={{background:`linear-gradient(135deg,${settings.accentColor},#818cf8)`,boxShadow:`0 4px 20px ${settings.accentColor}66`}}
+        title="OpsBoard Assistant">
+        {open
+          ? <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+          : <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+        }
+        {tasks.filter(t=>t.status!=="Done"&&t.dueDate&&t.dueDate<new Date().toISOString().split("T")[0]).length>0&&!open&&(
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] font-bold flex items-center justify-center">
+            {tasks.filter(t=>t.status!=="Done"&&t.dueDate&&t.dueDate<new Date().toISOString().split("T")[0]).length}
+          </span>
+        )}
+      </button>
+
+      {/* Chat panel */}
+      {open&&(
+        <div className="fixed bottom-20 right-5 w-80 sm:w-96 rounded-2xl shadow-2xl z-40 flex flex-col fade-in overflow-hidden"
+          style={{height:"480px",background:"var(--bg-panel)",border:"1px solid rgba(99,102,241,0.2)",boxShadow:"0 16px 48px rgba(0,0,0,0.5)"}}>
+
+          {/* Header */}
+          <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0 border-b" style={{borderColor:"var(--border-subtle)"}}>
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{background:`linear-gradient(135deg,${settings.accentColor},#818cf8)`}}>
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold" style={{color:"var(--text)"}}>OpsBoard Assistant</div>
+              <div className="text-xs" style={{color:"var(--text-faint)"}}>
+                {loading?"Thinking…":`${tasks.length} tasks · ${tasks.filter(t=>t.status!=="Done").length} open`}
+              </div>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
+            {messages.map((m,i)=>(
+              <div key={i} className={`flex ${m.role==="user"?"justify-end":"justify-start"}`}>
+                <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                  m.role==="user"
+                    ?"text-white rounded-br-sm"
+                    :"rounded-bl-sm"
+                  }`}
+                  style={m.role==="user"
+                    ?{background:settings.accentColor}
+                    :{background:"var(--bg-input-solid)",color:"var(--text-muted)",border:"1px solid var(--border)"}}>
+                  <div style={{whiteSpace:"pre-wrap"}}>{m.content}</div>
+                  {m.actions?.length>0&&(
+                    <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-1">
+                      {m.actions.map((a,ai)=>(
+                        <div key={ai} className="text-xs opacity-70 flex items-center gap-1">
+                          <span>✓</span><span>{a}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {loading&&(
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-bl-sm px-3 py-2.5 flex gap-1"
+                  style={{background:"var(--bg-input-solid)",border:"1px solid var(--border)"}}>
+                  {[0,1,2].map(i=>(
+                    <span key={i} className="w-1.5 h-1.5 rounded-full animate-bounce"
+                      style={{background:settings.accentColor,animationDelay:`${i*0.15}s`}}/>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef}/>
+          </div>
+
+          {/* Suggestions — shown when no messages except greeting */}
+          {messages.length<=1&&(
+            <div className="px-4 pb-2 flex flex-wrap gap-1.5 flex-shrink-0">
+              {suggestions.map(s=>(
+                <button key={s} onClick={()=>{setInput(s);setTimeout(()=>inputRef.current?.focus(),50);}}
+                  className="text-xs px-2.5 py-1 rounded-full border transition-colors hover:border-indigo-500/50"
+                  style={{borderColor:"var(--border)",color:"var(--text-muted)",background:"var(--bg-input-solid)"}}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="flex items-center gap-2 px-3 py-3 flex-shrink-0 border-t" style={{borderColor:"var(--border-subtle)"}}>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={e=>setInput(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()}
+              placeholder="Ask me anything…"
+              className="flex-1 rounded-xl px-3 py-2 text-sm border focus:outline-none focus:border-indigo-500 transition-colors"
+              style={{background:"var(--bg-input-solid)",borderColor:"var(--border)",color:"var(--text)"}}
+              disabled={loading}
+            />
+            <button onClick={send} disabled={loading||!input.trim()}
+              className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40"
+              style={{background:settings.accentColor}}>
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── App ────────────────────────────────────────────────────────────────────
+function App() {
+  // auth states: "loading" | "unauthenticated" | "authenticated"
+  const [authState,setAuthState]   = useState("loading");
+  const [user,setUser]             = useState(null);
+  const [tasks,setTasks]           = useState(SEED_TASKS);
+  const [settings,setSettings]     = useState(DEFAULT_SETTINGS);
+  const [dataLoaded,setDataLoaded] = useState(false);
+  const [storageMode,setStorageMode] = useState("local");
+  const [activeTab,setActiveTab]   = useState("Dashboard");
+  const [selectedId,setSelectedId] = useState(null);
+  const [showNew,setShowNew]       = useState(false);
+  const [search,setSearch]         = useState("");
+  const [showSearch,setShowSearch] = useState(false);
+  const { toasts, toast, dismiss } = useToast();
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
+
+  // Apply theme class to document root
+  useEffect(()=>{
+    document.documentElement.classList.toggle("theme-light", settings.theme==="light");
+  }, [settings.theme]);
+
+  // ── Bootstrap ────────────────────────────────────────────────────────────
+  useEffect(()=>{
+    const init = async () => {
+      // Fetch config from server before anything else — populates AZURE object
+      await loadConfig();
+      if (!azureConfigured()) {
+        // Azure not set up yet — skip auth, use localStorage directly
+        const t = await StorageService.load("tasks", SEED_TASKS);
+        const s = await StorageService.load("settings", DEFAULT_SETTINGS);
+        setTasks(t); setSettings({...DEFAULT_SETTINGS,...s});
+        setStorageMode(StorageService.mode());
+        setUser({name:"Local Mode",email:"",id:"local"});
+        setAuthState("authenticated"); setDataLoaded(true);
+        return;
+      }
+      // Try to restore session from this tab
+      const restored = AuthService.restoreSession();
+      if (restored) {
+        const t = await StorageService.load("tasks", SEED_TASKS);
+        const s = await StorageService.load("settings", DEFAULT_SETTINGS);
+        setTasks(t); setSettings({...DEFAULT_SETTINGS,...s});
+        setStorageMode(StorageService.mode());
+        setUser(restored); setAuthState("authenticated"); setDataLoaded(true);
+      } else {
+        setAuthState("unauthenticated");
+      }
+    };
+    init();
+  },[]);
+
+  // ── Auto-save ────────────────────────────────────────────────────────────
+  useEffect(()=>{
+    if (!dataLoaded) return;
+    StorageService.save("tasks",tasks).then(m=>{ if(m) setStorageMode(m); });
+  },[tasks]);
+
+  useEffect(()=>{
+    if (!dataLoaded) return;
+    StorageService.save("settings",settings);
+    document.title = settings.appName||"OpsBoard";
+  },[settings]);
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────
+  useEffect(()=>{
+    const h=e=>{
+      const tag=document.activeElement?.tagName;
+      if(["INPUT","TEXTAREA","SELECT"].includes(tag))return;
+      if(e.key==="Escape"){setShowNew(false);setShowSearch(false);setSearch("");setSelectedId(null);return;}
+      if(e.key==="n"||e.key==="N"){setShowNew(true);return;}
+      if(e.key==="/"||((e.ctrlKey||e.metaKey)&&e.key==="k")){e.preventDefault();setShowSearch(true);return;}
+      if(e.key==="b"||e.key==="B"){setActiveTab("Backlog");return;}
+      if(e.key==="d"||e.key==="D"){setActiveTab("Dashboard");return;}
+      if(e.key==="s"||e.key==="S"){setActiveTab("Settings");return;}
+      if(e.key==="i"||e.key==="I"){setActiveTab("Incidents");return;}
+      if(e.key==="v"||e.key==="V"){setActiveTab("Vulnerabilities");return;}
+    };
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
+  },[]);
+
+  // ── Auth handlers ────────────────────────────────────────────────────────
+  const handleAuth = async u => {
+    const t = await StorageService.load("tasks",SEED_TASKS);
+    const s = await StorageService.load("settings",DEFAULT_SETTINGS);
+    const mergedSettings = {...DEFAULT_SETTINGS,...s};
+    setTasks(t); setSettings(mergedSettings);
+    setStorageMode(StorageService.mode());
+    setUser(u); setAuthState("authenticated"); setDataLoaded(true);
+    // Show tutorial on first login — detected by empty task list and no userName configured
+    if (t.length===0 && !mergedSettings.userName) {
+      setShowTutorial(true);
+    } else {
+      // Show What's New if this version hasn't been seen
+      const seenVersion = localStorage.getItem("opsboard_seen_version");
+      if (seenVersion !== APP_VERSION) {
+        setShowWhatsNew(true);
+      } else {
+        toast(`Welcome back, ${u.name.split(" ")[0]}!`,"success");
+      }
+    }
+  };
+  const handleLogout = () => {
+    AuthService.logout();
+    setAuthState("unauthenticated"); setUser(null); setDataLoaded(false); setSelectedId(null);
+  };
+
+  // ── Task handlers ────────────────────────────────────────────────────────
+  const select       = id=>setSelectedId(p=>p===id?null:id);
+  const update       = u=>setTasks(ts=>ts.map(t=>t.id===u.id?u:t));
+  const del          = id=>{setTasks(ts=>ts.filter(t=>t.id!==id));setSelectedId(null);};
+  const add          = nt=>{const id=Math.max(...tasks.map(t=>t.id),0)+1;setTasks(ts=>[{...nt,id,createdAt:today()},...ts]);};
+  const saveSettings = s=>setSettings({...DEFAULT_SETTINGS,...s});
+  const switchTab    = t=>{setActiveTab(t);setSelectedId(null);if(showSearch){setShowSearch(false);setSearch("");}};
+
+  const selectedTask = tasks.find(t=>t.id===selectedId)||null;
+
+  // ── Render: loading ──────────────────────────────────────────────────────
+  if (authState==="loading") return (
+    <div className="min-h-screen flex items-center justify-center" style={{background:"var(--bg-base)"}}>
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{background:DEFAULT_SETTINGS.accentColor}}>
+          <svg width="20" height="20" viewBox="0 0 14 14" fill="none">
+            <rect x="1" y="1" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+            <rect x="8" y="1" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+            <rect x="1" y="8" width="5" height="5" rx="1" fill="white" opacity="0.6"/>
+            <rect x="8" y="8" width="5" height="5" rx="1" fill="white" opacity="0.9"/>
+          </svg>
+        </div>
+        <div className="text-slate-500 text-sm">Loading…</div>
+      </div>
+    </div>
+  );
+
+  // ── Render: login ────────────────────────────────────────────────────────
+  if (authState==="unauthenticated") return (
+    <><LoginPage onAuth={handleAuth} accentColor={settings.accentColor}/><ToastContainer toasts={toasts} dismiss={dismiss}/></>
+  );
+
+  // ── Render: main app ─────────────────────────────────────────────────────
+  return (
+    <div className="flex flex-col h-screen overflow-hidden" style={{background:"var(--bg-base)"}}>
+      <TopNav activeTab={activeTab} setActiveTab={switchTab} onNew={()=>setShowNew(true)}
+        settings={settings} tasks={tasks} search={search} setSearch={setSearch}
+        showSearch={showSearch} setShowSearch={setShowSearch}
+        storageMode={storageMode} user={user} onLogout={handleLogout}
+        isDark={settings.theme!=="light"}
+        onToggleTheme={()=>saveSettings({...settings,theme:settings.theme==="light"?"dark":"light"})}
+        onSettings={()=>switchTab("Settings")}
+        onDeleteData={()=>setConfirmDialog({
+          title:"Clear all data?",
+          message:"This will permanently delete all your tasks and reset your settings. This cannot be undone.",
+          confirmLabel:"Clear everything",
+          danger:true,
+          onConfirm:()=>{ setTasks([]); saveSettings(DEFAULT_SETTINGS); setConfirmDialog(null); toast("All data cleared","warn"); }
+        })}
+        onDeleteAccount={()=>setConfirmDialog({
+          title:"Delete account?",
+          message:"Your account and all associated data will be permanently deleted. You will be signed out immediately. This cannot be undone.",
+          confirmLabel:"Delete my account",
+          danger:true,
+          onConfirm:()=>{ handleLogout(); toast("Account deleted","error"); setConfirmDialog(null); }
+        })}
+      />
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto">
+          {showSearch
+            ? <SearchResults tasks={tasks} query={search} onSelect={id=>{select(id);setShowSearch(false);setSearch("");}} settings={settings}/>
+            : <>
+                {activeTab==="Dashboard"      && <Dashboard tasks={tasks} onSelect={select} settings={settings}/>}
+                {activeTab==="Backlog"        && <Backlog tasks={tasks} onSelect={select} selectedId={selectedId} settings={settings} toast={toast}/>}
+                {activeTab==="Board"          && <Board tasks={tasks} onSelect={select} settings={settings}/>}
+                {activeTab==="Incidents"      && <Incidents tasks={tasks} onSelect={select} selectedId={selectedId}/>}
+                {activeTab==="Vulnerabilities"&& <Vulnerabilities tasks={tasks} onSelect={select} selectedId={selectedId}/>}
+                {activeTab==="Settings"       && <Settings settings={settings} onSave={saveSettings} tasks={tasks}
+                  onImportTasks={t=>{setTasks(t);setSelectedId(null);}} onResetTasks={()=>{setTasks(SEED_TASKS);setSelectedId(null);}}
+                  onClearTasks={()=>{setTasks([]);setSelectedId(null);}} toast={toast}/>}
+              </>
+          }
+        </div>
+        {selectedTask&&activeTab!=="Settings"&&(
+          <DetailPanel task={selectedTask} onUpdate={update} onDelete={del}
+            onClose={()=>setSelectedId(null)} settings={settings} toast={toast}/>
+        )}
+      </div>
+      {showNew&&<NewTaskModal onAdd={add} onClose={()=>setShowNew(false)} settings={settings} toast={toast}/>}
+      {showTutorial&&<Tutorial onComplete={()=>{setShowTutorial(false);toast(`Welcome to OpsBoard!`,"success");}} accentColor={settings.accentColor} userName={user?.name}/>}
+      {showWhatsNew&&<WhatsNew accentColor={settings.accentColor} onClose={()=>{localStorage.setItem("opsboard_seen_version",APP_VERSION);setShowWhatsNew(false);toast("You're on v1.1.0","success");}}/>}
+      {confirmDialog&&<ConfirmModal title={confirmDialog.title} message={confirmDialog.message} confirmLabel={confirmDialog.confirmLabel} danger={confirmDialog.danger} onConfirm={confirmDialog.onConfirm} onCancel={()=>setConfirmDialog(null)} accentColor={settings.accentColor}/>}
+      <ChatBot tasks={tasks} settings={settings} onAdd={add} onUpdate={update} onSwitchTab={switchTab} onSelect={select} toast={toast} user={user}/>
+      <ToastContainer toasts={toasts} dismiss={dismiss}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
