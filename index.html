@@ -1741,7 +1741,7 @@ function NewTaskModal({ onAdd, onClose, settings, toast }) {
 }
 
 // ── Login Page ─────────────────────────────────────────────────────────────
-function LoginPage({ onAuth, accentColor }) {
+function LoginPage({ onAuth, onLocalMode, accentColor }) {
   // mode: "login" | "register" | "forgot" | "reset"
   const [mode,setMode]       = useState(() => {
     const p = new URLSearchParams(window.location.search);
@@ -2044,8 +2044,19 @@ function LoginPage({ onAuth, accentColor }) {
           )}
         </div>
 
+        {/* Local mode link — only shown on login/register, not forgot/reset */}
+        {(mode==="login"||mode==="register") && (
+          <div className="mt-5 text-center">
+            <button onClick={onLocalMode}
+              className="text-xs transition-colors hover:opacity-80"
+              style={{color:"var(--text-faint)"}}>
+              Continue without an account — use local storage only
+            </button>
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="flex items-center justify-center gap-3 mt-5">
+        <div className="flex items-center justify-center gap-3 mt-4">
           <span className="flex items-center gap-1.5 text-xs text-slate-600">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/>
             Secured
@@ -2816,6 +2827,22 @@ function App() {
       }
     }
   };
+  const handleLocalMode = async () => {
+    StorageService.init("local", null);
+    const t = await StorageService.load("tasks", SEED_TASKS);
+    const s = await StorageService.load("settings", DEFAULT_SETTINGS);
+    const mergedSettings = {...DEFAULT_SETTINGS,...s};
+    setTasks(t); setSettings(mergedSettings);
+    setStorageMode("local");
+    setUser({name:"Local User", email:"", id:"local"});
+    setAuthState("authenticated"); setDataLoaded(true);
+    if (t.length===0 && !mergedSettings.userName) {
+      setShowTutorial(true);
+    } else {
+      toast("Running in local mode — data saved to this browser only","info");
+    }
+  };
+
   const handleLogout = () => {
     AuthService.logout();
     setAuthState("unauthenticated"); setUser(null); setDataLoaded(false); setSelectedId(null);
@@ -2850,7 +2877,7 @@ function App() {
 
   // ── Render: login ────────────────────────────────────────────────────────
   if (authState==="unauthenticated") return (
-    <><LoginPage onAuth={handleAuth} accentColor={settings.accentColor}/><ToastContainer toasts={toasts} dismiss={dismiss}/></>
+    <><LoginPage onAuth={handleAuth} onLocalMode={handleLocalMode} accentColor={settings.accentColor}/><ToastContainer toasts={toasts} dismiss={dismiss}/></>
   );
 
   // ── Render: main app ─────────────────────────────────────────────────────
