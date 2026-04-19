@@ -3026,9 +3026,11 @@ Be concise. If asked for a summary, provide it clearly. If asked to do something
     setLoading(true);
 
     try {
+      const sessionRaw = localStorage.getItem("opsboard_session");
+      const sessionToken = sessionRaw ? JSON.parse(sessionRaw).token : null;
       const res = await fetch(`${AZURE.functionsUrl}/chat`, {
         method: "POST",
-        headers: {"Content-Type":"application/json"},
+        headers: {"Content-Type":"application/json", ...(sessionToken ? {"Authorization":`Bearer ${sessionToken}`} : {})},
         body: JSON.stringify({
           system: systemPrompt(),
           messages: newMessages.map(m=>({role:m.role,content:m.content})),
