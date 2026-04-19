@@ -226,7 +226,7 @@ const DEFAULT_SETTINGS = {
   categories:["Vulnerability","Deployment","Security","Incident","Compliance","Infrastructure","Monitoring","Patch"],
   accentColor:"#6366f1",
   theme:"midnight",  // "midnight"|"obsidian"|"ocean"|"forest"|"dusk"|"light"
-  twoFaEnabled:true,
+  twoFaEnabled:false,
   // Task defaults
   defaultPriority:"Medium",
   defaultCategory:"Security",
@@ -446,8 +446,8 @@ const AuthService = {
     });
     if (!res.ok) throw new Error(await this._parseError(res));
     const data = await res.json();
-    // Backend signals 2FA is required — don't apply session yet
-    if (data.two_fa_required) return { _2fa_required: true };
+    // Backend signals 2FA is required — return method so UI knows what to show
+    if (data.two_fa_required) return { _2fa_required: true, method: data.method || 'email' };
     return this._apply(data, email);
   },
 
@@ -508,6 +508,35 @@ const AuthService = {
     });
     if (!res.ok) throw new Error(await this._parseError(res));
     return true;
+  },
+
+  async setupTotp() {
+    let token = this._token;
+    if (!token) {
+      try { const r = localStorage.getItem("opsboard_session"); if (r) token = JSON.parse(r).token; } catch {}
+    }
+    if (!token) throw new Error("Not authenticated");
+    const res = await fetch(`${AZURE.functionsUrl}/auth/setup-totp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return res.json(); // { secret, otpauthUrl }
+  },
+
+  async confirmTotp(code) {
+    let token = this._token;
+    if (!token) {
+      try { const r = localStorage.getItem("opsboard_session"); if (r) token = JSON.parse(r).token; } catch {}
+    }
+    if (!token) throw new Error("Not authenticated");
+    const res = await fetch(`${AZURE.functionsUrl}/auth/confirm-totp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) throw new Error(await this._parseError(res));
+    return res.json();
   },
 
   async updateProfile({ twoFaEnabled }) {
@@ -1244,6 +1273,100 @@ function Vulnerabilities({ tasks, onSelect, selectedId }) {
   );
 }
 
+// ── TOTP Setup Component ─────────────────────────────────────────────────────
+function TotpSetup() {
+  const [phase, setPhase]   = React.useState("idle");
+  const [qrUrl, setQrUrl]   = React.useState("");
+  const [secret, setSecret] = React.useState("");
+  const [code, setCode]     = React.useState("");
+  const [err, setErr]       = React.useState("");
+
+  const start = async () => {
+    setPhase("loading"); setErr("");
+    try {
+      const data = await AuthService.setupTotp();
+      setSecret(data.secret);
+      setQrUrl(data.otpauthUrl);
+      setPhase("qr");
+    } catch(e) { setErr(e.message); setPhase("idle"); }
+  };
+
+  const confirm = async () => {
+    if (!code.trim()) { setErr("Enter the 6-digit code from your app."); return; }
+    setPhase("confirming"); setErr("");
+    try {
+      await AuthService.confirmTotp(code.trim());
+      setPhase("done");
+    } catch(e) { setErr(e.message); setPhase("qr"); }
+  };
+
+  if (phase === "done") return (
+    <div className="rounded-xl p-3 flex items-start gap-2.5 text-xs fade-in"
+      style={{background:"rgba(22,163,74,0.1)",border:"1px solid rgba(22,163,74,0.25)"}}>
+      <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{color:"#4ade80"}}>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div>
+        <p className="font-medium mb-0.5" style={{color:"#4ade80"}}>Authenticator app connected</p>
+        <p style={{color:"var(--text-muted)"}}>Your next sign-in will use your authenticator app for 2FA.</p>
+      </div>
+    </div>
+  );
+
+  if (phase === "qr" || phase === "confirming") return (
+    <div className="fade-in">
+      <p className="text-xs mb-3" style={{color:"var(--text-muted)"}}>
+        Scan with <strong style={{color:"var(--text)"}}>Bitwarden</strong>, <strong style={{color:"var(--text)"}}>Google Authenticator</strong>, or any TOTP app. Then enter the 6-digit code to verify.
+      </p>
+      <div className="flex justify-center mb-3">
+        <div className="rounded-xl p-3 bg-white inline-block">
+          <img src={"https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl="+encodeURIComponent(qrUrl)+"&choe=UTF-8"}
+            alt="TOTP QR Code" width="180" height="180" className="rounded-lg block"/>
+        </div>
+      </div>
+      <details className="mb-3">
+        <summary className="text-xs cursor-pointer" style={{color:"var(--text-faint)"}}>Can't scan? Enter manually</summary>
+        <div className="mt-2 rounded-lg px-3 py-2 font-mono text-xs tracking-widest text-center select-all break-all"
+          style={{background:"var(--bg-input-solid)",border:"1px solid var(--border)",color:"var(--text)"}}>
+          {secret}
+        </div>
+      </details>
+      <div className="flex gap-2">
+        <input type="text" inputMode="numeric" maxLength={6}
+          value={code} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,"").slice(0,6))}
+          onKeyDown={e=>e.key==="Enter"&&confirm()}
+          placeholder="000000"
+          className="flex-1 text-center font-mono text-lg tracking-widest rounded-xl px-3 py-2.5"
+          style={{background:"var(--bg-input-solid)",border:"1px solid var(--border)",color:"var(--text)"}}/>
+        <button onClick={confirm} disabled={phase==="confirming"}
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+          style={{background:"#6366f1",opacity:phase==="confirming"?0.6:1}}>
+          {phase==="confirming"?"...":"Verify"}
+        </button>
+      </div>
+      {err && <p className="text-xs mt-2 text-red-400">{err}</p>}
+    </div>
+  );
+
+  if (phase === "loading") return (
+    <div className="text-xs text-center py-3" style={{color:"var(--text-faint)"}}>Generating secret...</div>
+  );
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs font-medium" style={{color:"var(--text)"}}>Currently using email codes</p>
+        <p className="text-xs" style={{color:"var(--text-faint)"}}>Switch to an authenticator app for stronger 2FA</p>
+      </div>
+      <button onClick={start} className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:opacity-90"
+        style={{background:"rgba(99,102,241,0.3)",border:"1px solid rgba(99,102,241,0.4)"}}>
+        Set up app
+      </button>
+      {err && <p className="text-xs mt-1 text-red-400">{err}</p>}
+    </div>
+  );
+}
+
 // ── Settings ───────────────────────────────────────────────────────────────
 function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClearTasks, toast }) {
   const [draft,setDraft]     = useState({...DEFAULT_SETTINGS,...settings});
@@ -1466,24 +1589,22 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
             </div>
             <div className="glass rounded-2xl p-5 mt-3">
               <h3 className="text-slate-300 text-sm font-medium mb-1">Two-Factor Authentication</h3>
-              <p className="text-slate-500 text-xs mb-4">When enabled, a 6-digit code will be sent to your email each time you sign in.</p>
+              <p className="text-slate-500 text-xs mb-4">Require a second verification step on every sign-in.</p>
               <Toggle
                 value={!!draft.twoFaEnabled}
                 onChange={v=>{
                   upd("twoFaEnabled", v);
-                  // Update DB immediately so login can check it without waiting for Save
                   AuthService.updateProfile({ twoFaEnabled: v }).then(()=>{
-                    // also persist to local settings so it survives page refresh
                     onSave({...draft, twoFaEnabled: v});
                   });
                 }}
                 label="Two-factor authentication"
-                desc={draft.twoFaEnabled ? "Enabled — a code will be sent to your email on every sign-in" : "Disabled — sign in without a verification code"}/>
+                desc={draft.twoFaEnabled ? "Enabled — required on every sign-in" : "Disabled — sign in with password only"}/>
+
               {draft.twoFaEnabled && (
-                <div className="mt-3 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs fade-in"
-                  style={{background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.2)",color:"var(--text-muted)"}}>
-                  <span style={{color:"var(--indigo-l)"}}>ℹ</span>
-                  <span>2FA codes are sent to <strong style={{color:"var(--text)"}}>{draft.userName||"your email"}</strong> and expire after 5 minutes. Make sure your email address is accessible before enabling.</span>
+                <div className="mt-4 pt-4 border-t fade-in" style={{borderColor:"var(--border)"}}>
+                  <p className="text-xs font-medium mb-3" style={{color:"var(--text-muted)"}}>Verification method</p>
+                  <TotpSetup token={AuthService._token || (()=>{try{return JSON.parse(localStorage.getItem("opsboard_session")||"{}").token}catch{return null}})()}/>
                 </div>
               )}
             </div>
@@ -2032,6 +2153,7 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
   const [confirmPass,setCP]  = useState("");
   const [name,setName]       = useState("");
   const [twoFaCode,set2Fa]   = useState("");
+  const [twoFaMethod,set2FaMethod] = useState("email"); // 'email' | 'totp'
   const [showPass,setShowP]  = useState(false);
   const [showCP,setShowCP]   = useState(false);
   const [error,setError]     = useState("");
@@ -2039,7 +2161,7 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
   const [loading,setLoad]    = useState(false);
   const [msalLoading,setML]  = useState(false);
 
-  const switchMode = m => { setMode(m); setError(""); setInfo(""); setPass(""); setCP(""); set2Fa(""); };
+  const switchMode = (m, method) => { setMode(m); setError(""); setInfo(""); setPass(""); setCP(""); set2Fa(""); if(method) set2FaMethod(method); };
 
 
 
@@ -2095,10 +2217,13 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
       if (mode==="login") {
         const result = await AuthService.login(email, password);
         if (result && result._2fa_required) {
-          // Backend says 2FA required — send the code and show code entry screen
-          await AuthService.send2fa(email);
-          setInfo("A 6-digit code has been sent to your email.");
-          switchMode("2fa");
+          const method = result.method || 'email';
+          if (method === 'email') {
+            // Email 2FA — trigger code send
+            await AuthService.send2fa(email);
+            setInfo("A 6-digit code has been sent to your email.");
+          }
+          switchMode("2fa", method);
         } else if (result && result.id) {
           onAuth(result);
         } else {
@@ -2177,10 +2302,10 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
           )}
 
           <h2 className="text-white font-semibold text-base mb-1">
-            {mode==="login"?"Welcome back":mode==="register"?"Create your account":mode==="reset"?"Set a new password":mode==="2fa"?"Check your email":"Reset your password"}
+            {mode==="login"?"Welcome back":mode==="register"?"Create your account":mode==="reset"?"Set a new password":mode==="2fa"?(twoFaMethod==="totp"?"Authenticator code":"Check your email"):"Reset your password"}
           </h2>
           <p className="text-slate-500 text-xs mb-5">
-            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":mode==="reset"?"Choose a strong password for your account.":mode==="2fa"?"Enter the 6-digit code we sent to your email address.":"We'll send a reset link to your email."}
+            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":mode==="reset"?"Choose a strong password for your account.":mode==="2fa"?(twoFaMethod==="totp"?"Enter the 6-digit code from your authenticator app (Bitwarden, Google Authenticator, etc.)":"Enter the 6-digit code we sent to your email address."):"We'll send a reset link to your email."}
           </p>
 
           {/* Error / info banners */}
@@ -2212,14 +2337,19 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
                   className={inputCls+" text-center text-2xl font-bold tracking-[0.5em]"}
                   placeholder="000000"
                 />
-                <p className="text-xs text-slate-500 mt-2 text-center">Didn't receive it?{" "}
-                  <button type="button" onClick={async()=>{
-                    try { await AuthService.send2fa(email); setInfo("Code resent."); }
-                    catch(e) { setError(e.message); }
-                  }} className="underline hover:opacity-80 transition-opacity" style={{color:accentColor}}>
-                    Resend
-                  </button>
-                </p>
+                {twoFaMethod !== "totp" && (
+                  <p className="text-xs text-slate-500 mt-2 text-center">Didn't receive it?{" "}
+                    <button type="button" onClick={async()=>{
+                      try { await AuthService.send2fa(email); setInfo("Code resent."); }
+                      catch(e) { setError(e.message); }
+                    }} className="underline hover:opacity-80 transition-opacity" style={{color:accentColor}}>
+                      Resend
+                    </button>
+                  </p>
+                )}
+                {twoFaMethod === "totp" && (
+                  <p className="text-xs text-slate-500 mt-2 text-center">Open your authenticator app to get the current code.</p>
+                )}
               </div>
             ) : mode==="reset" ? (
               <>
