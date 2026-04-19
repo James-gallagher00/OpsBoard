@@ -12,53 +12,199 @@
   <!-- MSAL.js — Microsoft Authentication Library for browser-based SSO -->
   <script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" crossorigin="anonymous"></script>
   <style>
-    *{box-sizing:border-box}
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+
+    /* ── Base (Midnight default) ── */
     :root{
-      --bg-base:#0a0f1e;--bg-panel:#0d1424;--bg-card:rgba(15,23,42,.7);
-      --bg-input:rgba(30,41,59,.8);--bg-input-solid:#1e293b;
-      --border:#334155;--border-subtle:rgba(99,102,241,.15);
-      --text:#e2e8f0;--text-muted:#94a3b8;--text-faint:#64748b;
+      --bg-base:#07091a;--bg-panel:#0b0e22;
+      --bg-card:rgba(11,14,34,0.72);
+      --bg-input:rgba(15,20,50,0.9);--bg-input-solid:#0f1432;
+      --border:rgba(255,255,255,0.07);--border-subtle:rgba(99,102,241,0.18);
+      --text:#e2e8f0;--text-muted:#94a3b8;--text-faint:#475569;
+      --glass-bg:rgba(11,14,34,0.55);
+      --glass-hi:rgba(255,255,255,0.06);
+      --glass-edge:rgba(255,255,255,0.10);
+      --indigo-l:#818cf8;
+      --shadow:0 8px 32px rgba(0,0,0,0.45),0 1px 2px rgba(0,0,0,0.3);
     }
+
+    /* Midnight */
+    .theme-midnight{
+      --bg-base:#07091a;--bg-panel:#0b0e22;--bg-card:rgba(11,14,34,0.72);
+      --bg-input-solid:#0f1432;--border:rgba(255,255,255,0.07);
+      --glass-bg:rgba(11,14,34,0.55);--glass-hi:rgba(255,255,255,0.06);
+    }
+    /* Obsidian */
+    .theme-obsidian{
+      --bg-base:#080808;--bg-panel:#101010;--bg-card:rgba(18,18,18,0.8);
+      --bg-input-solid:#181818;--border:rgba(255,255,255,0.06);
+      --glass-bg:rgba(25,25,25,0.6);--glass-hi:rgba(255,255,255,0.04);
+      --shadow:0 8px 32px rgba(0,0,0,0.6),0 1px 2px rgba(0,0,0,0.4);
+    }
+    /* Ocean */
+    .theme-ocean{
+      --bg-base:#010d1f;--bg-panel:#021628;--bg-card:rgba(2,22,40,0.75);
+      --bg-input-solid:#04203a;--border:rgba(56,189,248,0.1);
+      --glass-bg:rgba(2,20,38,0.55);--glass-hi:rgba(56,189,248,0.06);
+      --border-subtle:rgba(56,189,248,0.2);
+      --indigo-l:#38bdf8;
+    }
+    /* Forest */
+    .theme-forest{
+      --bg-base:#04100a;--bg-panel:#071510;--bg-card:rgba(7,20,14,0.75);
+      --bg-input-solid:#0a1e12;--border:rgba(74,222,128,0.09);
+      --glass-bg:rgba(7,20,14,0.55);--glass-hi:rgba(74,222,128,0.05);
+      --border-subtle:rgba(74,222,128,0.18);
+      --indigo-l:#4ade80;
+    }
+    /* Dusk */
+    .theme-dusk{
+      --bg-base:#100720;--bg-panel:#160b2a;--bg-card:rgba(22,11,42,0.75);
+      --bg-input-solid:#1c1035;--border:rgba(167,139,250,0.1);
+      --glass-bg:rgba(22,11,42,0.55);--glass-hi:rgba(167,139,250,0.07);
+      --border-subtle:rgba(167,139,250,0.2);
+      --indigo-l:#c084fc;
+    }
+    /* Light */
     .theme-light{
-      --bg-base:#f1f5f9;--bg-panel:#ffffff;--bg-card:rgba(255,255,255,.85);
-      --bg-input:rgba(241,245,249,.9);--bg-input-solid:#f1f5f9;
-      --border:#cbd5e1;--border-subtle:rgba(99,102,241,.2);
+      --bg-base:#eef2f7;--bg-panel:#f8fafc;--bg-card:rgba(255,255,255,0.75);
+      --bg-input:rgba(248,250,252,0.95);--bg-input-solid:#f1f5f9;
+      --border:rgba(0,0,0,0.08);--border-subtle:rgba(99,102,241,0.2);
       --text:#0f172a;--text-muted:#475569;--text-faint:#94a3b8;
+      --glass-bg:rgba(255,255,255,0.65);
+      --glass-hi:rgba(255,255,255,0.8);
+      --glass-edge:rgba(255,255,255,0.95);
+      --shadow:0 8px 32px rgba(0,0,0,0.12),0 1px 2px rgba(0,0,0,0.06);
+      --indigo-l:#6366f1;
     }
-    body{margin:0;background:var(--bg-base);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);transition:background 0.3s,color 0.3s}
-    ::-webkit-scrollbar{width:5px;height:5px}
-    ::-webkit-scrollbar-track{background:#0f172a}
-    ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}
-    ::-webkit-scrollbar-thumb:hover{background:#334155}
+
+    body{
+      margin:0;background:var(--bg-base);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      color:var(--text);overflow-x:hidden;min-height:100vh;
+      transition:background 0.4s,color 0.3s;
+    }
+
+    /* ── Liquid glass ── */
+    .glass{
+      background:var(--glass-bg);
+      backdrop-filter:blur(24px) saturate(160%);
+      -webkit-backdrop-filter:blur(24px) saturate(160%);
+      border:1px solid var(--glass-edge,rgba(255,255,255,0.10));
+      box-shadow:var(--shadow,0 8px 32px rgba(0,0,0,0.4));
+      position:relative;overflow:hidden;
+    }
+    .glass::after{
+      content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+      background:linear-gradient(135deg,var(--glass-hi,rgba(255,255,255,0.06)) 0%,transparent 55%);
+    }
+
+    /* ── Scrollbars ── */
+    ::-webkit-scrollbar{width:4px;height:4px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+    ::-webkit-scrollbar-thumb:hover{background:var(--text-faint)}
+
     textarea:focus,input:focus,select:focus{outline:none}
+
+    /* ── Badges ── */
     .badge-critical{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d}
     .badge-high{background:#431407;color:#fdba74;border:1px solid #7c2d12}
     .badge-medium{background:#1c1917;color:#d6d3d1;border:1px solid #44403c}
     .badge-low{background:#0c4a6e;color:#7dd3fc;border:1px solid #075985}
-    .status-todo{background:#1e293b;color:#94a3b8;border:1px solid #334155}
-    .status-inprogress{background:#1e3a5f;color:#93c5fd;border:1px solid #1d4ed8}
-    .status-review{background:#2e1065;color:#c4b5fd;border:1px solid #6d28d9}
-    .status-blocked{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d}
-    .status-done{background:#052e16;color:#86efac;border:1px solid #166534}
+    .status-todo{background:rgba(30,41,59,.8);color:#94a3b8;border:1px solid #334155}
+    .status-inprogress{background:rgba(30,58,95,.8);color:#93c5fd;border:1px solid #1d4ed8}
+    .status-review{background:rgba(46,16,101,.8);color:#c4b5fd;border:1px solid #6d28d9}
+    .status-blocked{background:rgba(69,10,10,.8);color:#fca5a5;border:1px solid #7f1d1d}
+    .status-done{background:rgba(5,46,22,.8);color:#86efac;border:1px solid #166534}
     .overdue{background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d}
     .due-soon{background:#431407;color:#fdba74;border:1px solid #7c2d12}
-    .fade-in{animation:fadeIn .15s ease-in}
-    .slide-in{animation:slideIn .2s ease-out}
-    .toast-slide{animation:toastIn .25s ease-out}
-    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+    /* ── Animations ── */
+    .fade-in{animation:fadeIn .18s ease-out}
+    .slide-in{animation:slideIn .22s ease-out}
+    .toast-slide{animation:toastIn .3s cubic-bezier(.34,1.56,.64,1)}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
-    @keyframes toastIn{from{opacity:0;transform:translateX(120%)}to{opacity:1;transform:translateX(0)}}
+    @keyframes toastIn{from{opacity:0;transform:translateX(110%)}to{opacity:1;transform:translateX(0)}}
+
     .task-row{transition:background .1s}
-    .task-row:hover{background:#111827}
-    .glow{box-shadow:0 0 20px rgba(99,102,241,.15)}
+    .task-row:hover{background:rgba(255,255,255,0.03)}
+    .glow{box-shadow:0 0 24px rgba(99,102,241,.2)}
     .kanban-col{min-height:300px}
-    .glass{background:var(--bg-card);backdrop-filter:blur(12px);border:1px solid var(--border-subtle)}
     .pulse-dot{animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-    .kbd{display:inline-flex;align-items:center;justify-content:center;background:#1e293b;border:1px solid #334155;border-radius:4px;padding:1px 5px;font-size:10px;color:#94a3b8;font-family:monospace}
+    .kbd{
+      display:inline-flex;align-items:center;justify-content:center;
+      background:var(--bg-input-solid);border:1px solid var(--border);
+      border-radius:5px;padding:2px 6px;font-size:10px;
+      color:var(--text-muted);font-family:monospace;
+    }
     .search-highlight{background:rgba(99,102,241,.3);border-radius:2px}
     input[type=search]::-webkit-search-cancel-button{display:none}
     .progress-ring{transform:rotate(-90deg)}
+
+    /* ── Settings layout — sidebar + content ── */
+    .settings-wrap{display:flex;height:100%;min-height:0;overflow:hidden}
+    .settings-sidebar{
+      width:176px;flex-shrink:0;
+      border-right:1px solid var(--border);
+      padding:14px 10px;
+      overflow-y:auto;overflow-x:hidden;
+      background:rgba(0,0,0,0.15);
+      display:flex;flex-direction:column;
+      gap:2px;
+    }
+    .settings-sidebar-title{
+      font-size:10px;font-weight:700;letter-spacing:.08em;
+      text-transform:uppercase;color:var(--text-faint);
+      padding:0 6px;margin-bottom:8px;
+    }
+    .settings-nav{
+      width:100%;text-align:left;
+      padding:8px 10px;border-radius:9px;
+      font-size:13px;border:none;cursor:pointer;
+      background:transparent;color:var(--text-muted);
+      transition:all .15s;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis;
+    }
+    .settings-nav:hover{background:rgba(255,255,255,0.06);color:var(--text)}
+    .settings-nav.active{
+      background:rgba(99,102,241,0.14);
+      color:var(--text);font-weight:500;
+      box-shadow:inset 0 0 0 1px rgba(99,102,241,0.2);
+    }
+    .settings-save-wrap{
+      margin-top:auto;padding-top:12px;
+      border-top:1px solid var(--border);
+    }
+    .settings-content{
+      flex:1;overflow-y:auto;overflow-x:hidden;
+      padding:20px;min-width:0;
+    }
+
+    /* Mobile settings — horizontal pill nav */
+    @media(max-width:600px){
+      .settings-wrap{flex-direction:column}
+      .settings-sidebar{
+        width:100%;border-right:none;
+        border-bottom:1px solid var(--border);
+        flex-direction:row;flex-wrap:nowrap;
+        overflow-x:auto;overflow-y:hidden;
+        padding:10px;gap:4px;
+        -webkit-overflow-scrolling:touch;
+      }
+      .settings-sidebar-title{display:none}
+      .settings-nav{
+        flex-shrink:0;white-space:nowrap;
+        padding:6px 14px;font-size:12px;
+        border-radius:20px;
+      }
+      .settings-save-wrap{
+        display:none; /* save button moved into content area on mobile */
+      }
+      .settings-content{padding:14px}
+    }
   </style>
 </head>
 <body>
@@ -79,7 +225,7 @@ const DEFAULT_SETTINGS = {
   assignees:["Unassigned"],
   categories:["Vulnerability","Deployment","Security","Incident","Compliance","Infrastructure","Monitoring","Patch"],
   accentColor:"#6366f1",
-  theme:"dark",  // "dark" | "light"
+  theme:"midnight",  // "midnight"|"obsidian"|"ocean"|"forest"|"dusk"|"light"
   twoFaEnabled:true,
   // Task defaults
   defaultPriority:"Medium",
@@ -1172,34 +1318,43 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
   const sections = ["General","Profile","Team","Categories","Task Defaults","Notifications","Stats","Data","Shortcuts"];
 
   return (
-    <div className="fade-in flex h-full">
+    <div className="fade-in settings-wrap">
       {/* Sidebar */}
-      <div className="w-48 border-r p-4 flex-shrink-0 overflow-y-auto" style={{borderColor:"var(--border)"}}>
-        <div className="text-xs text-slate-500 uppercase tracking-wide mb-3">Settings</div>
+      <div className="settings-sidebar">
+        <div className="settings-sidebar-title">Settings</div>
         {sections.map(s=>(
           <button key={s} onClick={()=>setSection(s)}
-            className={`w-full text-left px-3 py-2 rounded-md text-sm mb-0.5 transition-colors ${section===s?"bg-slate-800 text-white":"text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"}`}>
+            className={`settings-nav${section===s?" active":""}`}>
             {s}
           </button>
         ))}
-        <div className="mt-4 pt-4 border-t border-slate-800/60">
+        <div className="settings-save-wrap">
           <button onClick={save}
-            className={`w-full py-2 rounded-md text-sm font-semibold transition-colors ${saved?"bg-emerald-600 text-white":"text-white hover:opacity-90"}`}
-            style={saved?{}:{background:settings.accentColor}}>
+            className="w-full py-2 rounded-xl text-sm font-semibold transition-all text-white hover:opacity-90"
+            style={saved?{background:"#16a34a"}:{background:settings.accentColor}}>
             {saved?"Saved ✓":"Save Changes"}
           </button>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="settings-content">
+
+        {/* Mobile save button — visible only on small screens */}
+        <div className="flex justify-end mb-3 sm:hidden">
+          <button onClick={save}
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all"
+            style={saved?{background:"#16a34a"}:{background:settings.accentColor}}>
+            {saved?"Saved ✓":"Save Changes"}
+          </button>
+        </div>
 
         {/* ── General ── */}
         {section==="General"&&(
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">General</h2>
             <p className="text-slate-400 text-sm mb-5">App name, branding, and display preferences.</p>
-            <div className="glass rounded-xl p-5 mb-4">
+            <div className="glass rounded-2xl p-5 mb-3">
               <h3 className="text-slate-300 text-sm font-medium mb-4">Application</h3>
               <div className="mb-4">
                 <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">App Name</label>
@@ -1232,7 +1387,42 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
               <h3 className="text-slate-300 text-sm font-medium mb-3">Display</h3>
               <Toggle value={draft.compactMode} onChange={v=>upd("compactMode",v)} label="Compact mode" desc="Reduce spacing in task lists"/>
               <Toggle value={draft.showCompletedTasks} onChange={v=>upd("showCompletedTasks",v)} label="Show completed tasks" desc="Include Done tasks in Backlog and Board views"/>
-              <Toggle value={draft.theme==="light"} onChange={v=>upd("theme",v?"light":"dark")} label="Light mode" desc="Switch between dark and light theme"/>
+              <div>
+                <label className="settings-label" style={{color:"var(--text-faint)"}}>Theme</label>
+                <div className="grid grid-cols-3 gap-2 mt-1">
+                  {[
+                    {id:"midnight", label:"Midnight", bg:"#07091a", accent:"#6366f1"},
+                    {id:"obsidian", label:"Obsidian", bg:"#080808", accent:"#6366f1"},
+                    {id:"ocean",    label:"Ocean",    bg:"#010d1f", accent:"#38bdf8"},
+                    {id:"forest",   label:"Forest",   bg:"#04100a", accent:"#4ade80"},
+                    {id:"dusk",     label:"Dusk",     bg:"#100720", accent:"#c084fc"},
+                    {id:"light",    label:"Light",    bg:"#eef2f7", accent:"#6366f1"},
+                  ].map(t=>(
+                    <button key={t.id} onClick={()=>upd("theme",t.id)}
+                      className="relative rounded-xl p-3 border transition-all text-left overflow-hidden"
+                      style={{
+                        background:t.bg,
+                        borderColor: draft.theme===t.id ? t.accent : "rgba(255,255,255,0.08)",
+                        boxShadow: draft.theme===t.id ? `0 0 0 2px ${t.accent}40` : "none",
+                      }}>
+                      <div className="flex gap-1 mb-2">
+                        {[0.9,0.5,0.5,0.9].map((o,i)=>(
+                          <div key={i} className="w-2 h-2 rounded-sm" style={{background:t.accent,opacity:o}}/>
+                        ))}
+                      </div>
+                      <div className="text-xs font-medium truncate" style={{color: t.id==="light"?"#0f172a":"#e2e8f0"}}>{t.label}</div>
+                      {draft.theme===t.id && (
+                        <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full flex items-center justify-center"
+                          style={{background:t.accent}}>
+                          <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                            <path d="M2 5l2.5 2.5L8 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="pt-3">
                 <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Date Format</label>
                 <select value={draft.dateFormat} onChange={e=>upd("dateFormat",e.target.value)} className={selectCls}>
@@ -1250,7 +1440,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">Profile</h2>
             <p className="text-slate-400 text-sm mb-5">Your name, avatar, and personal preferences.</p>
-            <div className="glass rounded-xl p-5 mb-4">
+            <div className="glass rounded-2xl p-5 mb-3">
               <div className="flex items-center gap-4 mb-5 pb-5 border-b border-slate-800/60">
                 <div className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0"
                   style={{background:draft.accentColor+"cc"}}>
@@ -1274,7 +1464,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
               </div>
               <div className="text-xs text-slate-500">Initials appear on your profile avatar in the top bar.</div>
             </div>
-            <div className="glass rounded-xl p-5 mt-4">
+            <div className="glass rounded-2xl p-5 mt-3">
               <h3 className="text-slate-300 text-sm font-medium mb-1">Two-Factor Authentication</h3>
               <p className="text-slate-500 text-xs mb-4">When enabled, a 6-digit code will be sent to your email each time you sign in.</p>
               <Toggle
@@ -1305,7 +1495,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">Team</h2>
             <p className="text-slate-400 text-sm mb-5">Manage assignees available on all tasks.</p>
-            <div className="glass rounded-xl p-5 mb-4">
+            <div className="glass rounded-2xl p-5 mb-3">
               <div className="flex flex-col gap-2 mb-4">
                 {draft.assignees.map((a,i)=>(
                   <div key={a} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2.5">
@@ -1339,7 +1529,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">Categories</h2>
             <p className="text-slate-400 text-sm mb-5">Task categories used for filters, views, and the dashboard.</p>
-            <div className="glass rounded-xl p-5 mb-4">
+            <div className="glass rounded-2xl p-5 mb-3">
               <div className="flex flex-col gap-2 mb-4">
                 {draft.categories.map(c=>(
                   <div key={c} className="flex items-center justify-between bg-slate-800/60 rounded-md px-3 py-2.5">
@@ -1372,7 +1562,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">Task Defaults</h2>
             <p className="text-slate-400 text-sm mb-5">Pre-fill values when creating new tasks.</p>
-            <div className="glass rounded-xl p-5 mb-4">
+            <div className="glass rounded-2xl p-5 mb-3">
               <h3 className="text-slate-300 text-sm font-medium mb-4">New Task Defaults</h3>
               <div className="mb-4">
                 <label className="text-xs text-slate-500 uppercase tracking-wide mb-1 block">Default Priority</label>
@@ -1416,7 +1606,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
           <div className="fade-in max-w-lg">
             <h2 className="text-white font-semibold text-lg mb-1">Notifications</h2>
             <p className="text-slate-400 text-sm mb-5">Control what appears on your dashboard and badges.</p>
-            <div className="glass rounded-xl p-5 mb-4">
+            <div className="glass rounded-2xl p-5 mb-3">
               <h3 className="text-slate-300 text-sm font-medium mb-3">Dashboard Alerts</h3>
               <Toggle value={draft.notifyOverdue} onChange={v=>upd("notifyOverdue",v)} label="Overdue task alerts" desc="Show overdue banner on Dashboard"/>
               <Toggle value={draft.notifyDueSoon} onChange={v=>upd("notifyDueSoon",v)} label="Due soon alerts" desc="Warn when tasks are approaching their due date"/>
@@ -1453,7 +1643,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
                 </div>
               ))}
             </div>
-            <div className="glass rounded-xl p-5 mb-4">
+            <div className="glass rounded-2xl p-5 mb-3">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-slate-300 text-sm font-medium">Completion rate</h3>
                 <span className="text-white font-bold text-lg">{completionPct}%</span>
@@ -1463,7 +1653,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
               </div>
             </div>
             {byCategory.length>0&&(
-              <div className="glass rounded-xl p-5 mb-4">
+              <div className="glass rounded-2xl p-5 mb-3">
                 <h3 className="text-slate-300 text-sm font-medium mb-3">Tasks by category</h3>
                 {byCategory.map(({name,count})=>(
                   <div key={name} className="flex items-center gap-3 mb-2">
@@ -1477,7 +1667,7 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
               </div>
             )}
             {byAssignee.length>0&&(
-              <div className="glass rounded-xl p-5 mb-4">
+              <div className="glass rounded-2xl p-5 mb-3">
                 <h3 className="text-slate-300 text-sm font-medium mb-3">Open tasks by assignee</h3>
                 {byAssignee.map(({name,count})=>(
                   <div key={name} className="flex items-center gap-3 mb-2">
@@ -2884,7 +3074,10 @@ function App() {
 
   // Apply theme class to document root
   useEffect(()=>{
-    document.documentElement.classList.toggle("theme-light", settings.theme==="light");
+    const themes = ["theme-midnight","theme-obsidian","theme-ocean","theme-forest","theme-dusk","theme-light"];
+    themes.forEach(t => document.documentElement.classList.remove(t));
+    const cls = settings.theme === "dark" ? "theme-midnight" : `theme-${settings.theme}`;
+    document.documentElement.classList.add(cls);
   }, [settings.theme]);
 
   // ── Bootstrap ────────────────────────────────────────────────────────────
@@ -3029,7 +3222,7 @@ function App() {
         showSearch={showSearch} setShowSearch={setShowSearch}
         storageMode={storageMode} user={user} onLogout={handleLogout}
         isDark={settings.theme!=="light"}
-        onToggleTheme={()=>saveSettings({...settings,theme:settings.theme==="light"?"dark":"light"})}
+        onToggleTheme={()=>saveSettings({...settings,theme:settings.theme==="light"?"midnight":"light"})}
         onSettings={()=>switchTab("Settings")}
         onDeleteData={()=>setConfirmDialog({
           title:"Clear all data?",
