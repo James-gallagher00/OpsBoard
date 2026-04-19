@@ -4,14 +4,31 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>OpsBoard</title>
+  <script>
+    (function(){
+      // Disable right-click context menu
+      document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+      // Block common DevTools keyboard shortcuts
+      document.addEventListener('keydown', function(e){
+        // F12
+        if (e.keyCode === 123) { e.preventDefault(); return false; }
+        // Ctrl+Shift+I / Cmd+Opt+I
+        if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.keyCode === 73) { e.preventDefault(); return false; }
+        // Ctrl+Shift+J / Cmd+Opt+J
+        if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.keyCode === 74) { e.preventDefault(); return false; }
+        // Ctrl+Shift+C
+        if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.keyCode === 67) { e.preventDefault(); return false; }
+        // Ctrl+U (view source)
+        if ((e.ctrlKey||e.metaKey) && e.keyCode === 85) { e.preventDefault(); return false; }
+      });
+    })();
+  </script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%236366f1'/><rect x='1' y='1' width='6' height='6' rx='1' fill='white' opacity='0.9'/><rect x='9' y='1' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='1' y='9' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='9' y='9' width='6' height='6' rx='1' fill='white' opacity='0.9'/></svg>"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- MSAL.js — Microsoft Authentication Library for browser-based SSO -->
   <script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" crossorigin="anonymous"></script>
-  <!-- QRCode.js — client-side QR code generation, no external API needed -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>
   <style>
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -297,7 +314,6 @@ const msalConfigured = () => {
   return !!AZURE.clientId && !!AZURE.tenantId;
 };
 
-// MSAL instance — created lazily on first Microsoft sign-in attempt
 let _msalInstance = null;
 let _msalInitialised = false;
 const getMsal = () => {
@@ -317,7 +333,7 @@ const getMsal = () => {
     system: {
       loggerOptions: {
         loggerCallback: (level, message, containsPii) => {
-          if (!containsPii) console.log('[MSAL]', message);
+          if (!containsPii)
         },
         logLevel: msal.LogLevel?.Warning ?? 2,
       },
@@ -340,12 +356,10 @@ const initialiseMsal = async () => {
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Storage Service ────────────────────────────────────────────────────────
-// Writes/reads JSON blobs to Azure Blob Storage using a per-user SAS token.
-// Falls back to localStorage automatically if Azure is unreachable or not configured.
 const StorageService = {
   _sasToken: null,
   _userId:   null,
-  _mode:     "local", // "azure" | "local" | "memory"
+  _mode:     "local",
 
   init(userId, sasToken) {
     this._userId   = userId;
@@ -371,12 +385,10 @@ const StorageService = {
           // SAS token expired — clear session so user is prompted to re-login
           localStorage.removeItem("opsboard_session");
           this._mode = "local";
-          console.warn("Session expired — please sign in again.");
         } else {
           throw new Error(res.statusText);
         }
       } catch (e) {
-        console.warn("Cloud save failed, using local fallback:", e.message);
         this._mode = "local";
       }
     }
@@ -393,13 +405,11 @@ const StorageService = {
           // SAS token expired — clear session so user is prompted to re-login
           localStorage.removeItem("opsboard_session");
           this._mode = "local";
-          console.warn("Session expired — please sign in again.");
         } else if (res.status !== 404) {
           throw new Error(res.statusText);
         }
         return defaultVal; // 404 = no data yet, that's fine
       } catch (e) {
-        console.warn("Cloud load failed, using local fallback:", e.message);
         this._mode = "local";
       }
     }
@@ -411,7 +421,6 @@ const StorageService = {
 };
 
 // ── Auth Service ───────────────────────────────────────────────────────────
-// Calls your Azure Functions for login/register.
 // ▶ Your Function at /auth/login  must accept:  POST { email, password }
 // ▶ Your Function at /auth/register must accept: POST { email, password, displayName }
 // ▶ Both must return: { token, userId, displayName, sasToken }
@@ -464,10 +473,9 @@ const AuthService = {
     // Always returns the same neutral message regardless of whether
     // the email was new or already registered — throw it as a signal
     // for the frontend to show as info and redirect to sign in
-    throw new Error(data.message || "Check your inbox to complete registration.");
+    throw new Error("Account registered. If it does not already exist, you can now sign in.");
   },
 
-  // ── Microsoft SSO ──────────────────────────────────────────────────────
   async msalLogin() {
     const msalInst = await initialiseMsal();
     if (!msalInst) throw new Error("Work account sign-in is not available.");
@@ -523,7 +531,7 @@ const AuthService = {
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(await this._parseError(res));
-    return res.json(); // { secret, otpauthUrl }
+    return res.json();
   },
 
   async confirmTotp(code) {
@@ -551,7 +559,6 @@ const AuthService = {
       } catch {}
     }
     if (!token) {
-      console.warn("updateProfile: no token available");
       return;
     }
     try {
@@ -562,12 +569,9 @@ const AuthService = {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        console.error("updateProfile failed:", res.status, err);
       } else {
-        console.log("updateProfile: 2FA set to", twoFaEnabled);
       }
     } catch(e) {
-      console.error("updateProfile error:", e.message);
     }
   },
 
