@@ -1902,7 +1902,7 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
           await AuthService.send2fa(email);
           setInfo("A 6-digit code has been sent to your email.");
           switchMode("2fa");
-        } else if (result && result.token) {
+        } else if (result && result.id) {
           onAuth(result);
         } else {
           // Unexpected response — don't grant access
