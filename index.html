@@ -365,7 +365,14 @@ const AuthService = {
   },
 
   async updateProfile({ twoFaEnabled }) {
-    const token = this._token;
+    // Fall back to localStorage if in-memory token is null (e.g. after page refresh)
+    let token = this._token;
+    if (!token) {
+      try {
+        const raw = localStorage.getItem("opsboard_session");
+        if (raw) token = JSON.parse(raw).token;
+      } catch {}
+    }
     if (!token) {
       console.warn("updateProfile: no token available");
       return;
