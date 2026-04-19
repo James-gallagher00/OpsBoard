@@ -80,7 +80,7 @@ const DEFAULT_SETTINGS = {
   categories:["Vulnerability","Deployment","Security","Incident","Compliance","Infrastructure","Monitoring","Patch"],
   accentColor:"#6366f1",
   theme:"dark",  // "dark" | "light"
-  twoFaEnabled:false,
+  twoFaEnabled:true,
   // Task defaults
   defaultPriority:"Medium",
   defaultCategory:"Security",
@@ -312,7 +312,11 @@ const AuthService = {
       body: JSON.stringify({ email, password, name: displayName }),
     });
     if (!res.ok) throw new Error(await this._parseError(res));
-    return this._apply(await res.json(), email);
+    const data = await res.json();
+    // If no token returned, registration was masked (duplicate email or similar)
+    // Surface the message as an info string, not an error
+    if (!data.token) throw new Error(data.message || "Registration could not be completed. Please try again.");
+    return this._apply(data, email);
   },
 
   // ── Microsoft SSO ──────────────────────────────────────────────────────
@@ -362,12 +366,25 @@ const AuthService = {
 
   async updateProfile({ twoFaEnabled }) {
     const token = this._token;
-    if (!token) return;
-    await fetch(`${AZURE.functionsUrl}/auth/update-profile`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-      body: JSON.stringify({ twoFaEnabled }),
-    }).catch(() => {}); // best-effort — settings already saved locally
+    if (!token) {
+      console.warn("updateProfile: no token available");
+      return;
+    }
+    try {
+      const res = await fetch(`${AZURE.functionsUrl}/auth/update-profile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ twoFaEnabled }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("updateProfile failed:", res.status, err);
+      } else {
+        console.log("updateProfile: 2FA set to", twoFaEnabled);
+      }
+    } catch(e) {
+      console.error("updateProfile error:", e.message);
+    }
   },
 
   async verify2fa(email, code) {
@@ -1255,9 +1272,16 @@ function Settings({ settings, onSave, tasks, onImportTasks, onResetTasks, onClea
               <p className="text-slate-500 text-xs mb-4">When enabled, a 6-digit code will be sent to your email each time you sign in.</p>
               <Toggle
                 value={!!draft.twoFaEnabled}
-                onChange={v=>upd("twoFaEnabled", v)}
-                label="Enable 2FA on sign-in"
-                desc="Requires email verification on every login"/>
+                onChange={v=>{
+                  upd("twoFaEnabled", v);
+                  // Update DB immediately so login can check it without waiting for Save
+                  AuthService.updateProfile({ twoFaEnabled: v }).then(()=>{
+                    // also persist to local settings so it survives page refresh
+                    onSave({...draft, twoFaEnabled: v});
+                  });
+                }}
+                label="Two-factor authentication"
+                desc={draft.twoFaEnabled ? "Enabled — a code will be sent to your email on every sign-in" : "Disabled — sign in without a verification code"}/>
               {draft.twoFaEnabled && (
                 <div className="mt-3 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs fade-in"
                   style={{background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.2)",color:"var(--text-muted)"}}>
@@ -1876,12 +1900,25 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
           await AuthService.send2fa(email);
           setInfo("A 6-digit code has been sent to your email.");
           switchMode("2fa");
-        } else {
+        } else if (result && result.token) {
           onAuth(result);
+        } else {
+          // Unexpected response — don't grant access
+          setError("Sign-in failed. Please try again.");
         }
       } else {
-        const user = await AuthService.register(email, password, name);
-        onAuth(user);
+        try {
+          const user = await AuthService.register(email, password, name);
+          onAuth(user);
+        } catch(e) {
+          // Show masked registration message as info (neutral) not error (red)
+          const maskedMsg = "If this email is not already registered";
+          if (e.message && e.message.includes(maskedMsg)) {
+            setInfo(e.message);
+          } else {
+            setError(e.message);
+          }
+        }
       }
     } catch(e) { setError(e.message); }
     finally { setLoad(false); }
