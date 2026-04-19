@@ -314,7 +314,7 @@ const getMsal = () => {
     system: {
       loggerOptions: {
         loggerCallback: (level, message, containsPii) => {
-          if (!containsPii)
+          if (!containsPii) { /* suppressed */ }
         },
         logLevel: msal.LogLevel?.Warning ?? 2,
       },
