@@ -353,17 +353,6 @@ const AuthService = {
     return this._apply(await res.json(), result.account.username);
   },
 
-  // ── Email verification ────────────────────────────────────────────────
-  async resendVerification(email) {
-    const res = await fetch(`${AZURE.functionsUrl}/auth/resend-verification`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    if (!res.ok) throw new Error(await this._parseError(res));
-    return true;
-  },
-
   // ── 2FA ────────────────────────────────────────────────────────────────
   async send2fa(email) {
     const res = await fetch(`${AZURE.functionsUrl}/auth/send-2fa`, {
@@ -1835,21 +1824,17 @@ function NewTaskModal({ onAdd, onClose, settings, toast }) {
 
 // ── Login Page ─────────────────────────────────────────────────────────────
 function LoginPage({ onAuth, onLocalMode, accentColor }) {
-  // mode: "login" | "register" | "forgot" | "reset" | "2fa" | "unverified"
+  // mode: "login" | "register" | "forgot" | "reset" | "2fa"
   const [mode,setMode]       = useState(() => {
     const p = new URLSearchParams(window.location.search);
-    if (p.get("reset"))    return "reset";
-    if (p.get("verified")) return "login"; // handled via info message below
-    return "login";
+    return p.get("reset") ? "reset" : "login";
   });
   const [resetToken]         = useState(() => new URLSearchParams(window.location.search).get("reset") || "");
-  const [verifiedStatus]     = useState(() => new URLSearchParams(window.location.search).get("verified") || "");
   const [email,setEmail]     = useState("");
   const [password,setPass]   = useState("");
   const [confirmPass,setCP]  = useState("");
   const [name,setName]       = useState("");
   const [twoFaCode,set2Fa]   = useState("");
-  const [unverifiedEmail,setUnverifiedEmail] = useState("");
   const [showPass,setShowP]  = useState(false);
   const [showCP,setShowCP]   = useState(false);
   const [error,setError]     = useState("");
@@ -1859,16 +1844,7 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
 
   const switchMode = m => { setMode(m); setError(""); setInfo(""); setPass(""); setCP(""); set2Fa(""); };
 
-  // Show verified success message if redirected from verification link
-  useEffect(() => {
-    if (verifiedStatus === "true") {
-      setInfo("Email verified successfully. You can now sign in.");
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (verifiedStatus === "invalid") {
-      setError("This verification link is invalid or has expired. Please request a new one.");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
+
 
   // ── Submit handler ───────────────────────────────────────────────────
   const submit = async () => {
@@ -1921,11 +1897,7 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
     try {
       if (mode==="login") {
         const result = await AuthService.login(email, password);
-        if (result && result.unverified) {
-          // Account exists but email not verified
-          setUnverifiedEmail(email);
-          switchMode("unverified");
-        } else if (result && result._2fa_required) {
+        if (result && result._2fa_required) {
           // Backend says 2FA required — send the code and show code entry screen
           await AuthService.send2fa(email);
           setInfo("A 6-digit code has been sent to your email.");
@@ -1937,15 +1909,8 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
           setError("Sign-in failed. Please try again.");
         }
       } else {
-        try {
-          await AuthService.register(email, password, name);
-        } catch(e) {
-          // Always show as neutral info — check inbox to verify
-          setInfo(e.message || "Check your inbox to verify your email address.");
-          setPass(""); setCP("");
-          // Switch to login after a moment so user can sign in
-          setTimeout(()=>switchMode("login"), 4000);
-        }
+        const user = await AuthService.register(email, password, name);
+        onAuth(user);
       }
     } catch(e) { setError(e.message); }
     finally { setLoad(false); }
@@ -2015,10 +1980,10 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
           )}
 
           <h2 className="text-white font-semibold text-base mb-1">
-            {mode==="login"?"Welcome back":mode==="register"?"Create your account":mode==="reset"?"Set a new password":mode==="2fa"?"Check your email":mode==="unverified"?"Verify your email":"Reset your password"}
+            {mode==="login"?"Welcome back":mode==="register"?"Create your account":mode==="reset"?"Set a new password":mode==="2fa"?"Check your email":"Reset your password"}
           </h2>
           <p className="text-slate-500 text-xs mb-5">
-            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":mode==="reset"?"Choose a strong password for your account.":mode==="2fa"?"Enter the 6-digit code we sent to your email address.":mode==="unverified"?"Your email address needs to be verified before you can sign in.":"We'll send a reset link to your email."}
+            {mode==="login"?"Sign in to your OpsBoard workspace.":mode==="register"?"Get started — it only takes a minute.":mode==="reset"?"Choose a strong password for your account.":mode==="2fa"?"Enter the 6-digit code we sent to your email address.":"We'll send a reset link to your email."}
           </p>
 
           {/* Error / info banners */}
@@ -2034,27 +1999,8 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
           )}
 
           <div className="flex flex-col gap-4">
-            {/* Unverified mode — resend verification */}
-            {mode==="unverified" ? (
-              <div className="fade-in text-center py-2">
-                <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
-                  style={{background:"rgba(99,102,241,0.12)",border:"1px solid rgba(99,102,241,0.2)"}}>
-                  <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{color:accentColor}}>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                  </svg>
-                </div>
-                <p className="text-sm mb-1" style={{color:"var(--text)"}}>Check your inbox</p>
-                <p className="text-xs mb-4" style={{color:"var(--text-muted)"}}>We sent a verification link to <strong style={{color:"var(--text)"}}>{unverifiedEmail}</strong>. Click it to activate your account.</p>
-                <button type="button" onClick={async()=>{
-                  try {
-                    await AuthService.resendVerification(unverifiedEmail);
-                    setInfo("Verification email resent. Check your inbox.");
-                  } catch(e) { setError(e.message); }
-                }} className="text-xs underline hover:opacity-80 transition-opacity" style={{color:accentColor}}>
-                  Didn't receive it? Resend verification email
-                </button>
-              </div>
-            ) : mode==="2fa" ? (
+            {/* 2FA mode — code entry only */}
+            {mode==="2fa" ? (
               <div className="fade-in">
                 <label className="text-xs text-slate-400 uppercase tracking-widest mb-1.5 block font-medium">Verification Code</label>
                 <input
@@ -2191,8 +2137,8 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
             )}
           </div>
 
-          {/* Primary submit button — hidden on unverified screen */}
-          {mode !== "unverified" && <button onClick={submit} disabled={loading}
+          {/* Primary submit button */}
+          <button onClick={submit} disabled={loading}
             className="w-full mt-5 py-2.5 rounded-xl text-white text-sm font-semibold transition-all hover:opacity-90 active:scale-[.98] disabled:opacity-50"
             style={{background:`linear-gradient(135deg,${accentColor} 0%,#818cf8 100%)`,boxShadow:`0 4px 16px ${accentColor}55`}}>
             {loading?"Please wait…"
@@ -2201,10 +2147,10 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
               :mode==="reset"?"Set New Password →"
               :mode==="2fa"?"Verify Code →"
               :"Send Reset Link →"}
-          </button>}
+          </button>
 
           {/* Divider + Microsoft SSO — not shown on forgot, reset, or 2fa */}
-          {mode!=="forgot" && mode!=="reset" && mode!=="2fa" && mode!=="unverified" && (
+          {mode!=="forgot" && mode!=="reset" && mode!=="2fa" && (
             <>
               <div className="flex items-center gap-3 my-4">
                 <div className="flex-1 h-px bg-slate-800"/>
@@ -2233,7 +2179,7 @@ function LoginPage({ onAuth, onLocalMode, accentColor }) {
         </div>
 
         {/* Local mode link — only shown on login/register, not forgot/reset */}
-        {(mode==="login"||mode==="register") && onLocalMode && mode!=="unverified" && (
+        {(mode==="login"||mode==="register") && onLocalMode && (
           <div className="mt-5 text-center">
             <button onClick={onLocalMode}
               className="text-xs transition-colors hover:opacity-80"
