@@ -11,6 +11,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- MSAL.js — Microsoft Authentication Library for browser-based SSO -->
   <script src="https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js" crossorigin="anonymous"></script>
+  <!-- QRCode.js — client-side QR code generation, no external API needed -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>
   <style>
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 
@@ -226,7 +228,7 @@ const DEFAULT_SETTINGS = {
   categories:["Vulnerability","Deployment","Security","Incident","Compliance","Infrastructure","Monitoring","Patch"],
   accentColor:"#6366f1",
   theme:"midnight",  // "midnight"|"obsidian"|"ocean"|"forest"|"dusk"|"light"
-  twoFaEnabled:false,
+  twoFaEnabled:true,
   // Task defaults
   defaultPriority:"Medium",
   defaultCategory:"Security",
@@ -1273,6 +1275,32 @@ function Vulnerabilities({ tasks, onSelect, selectedId }) {
   );
 }
 
+// ── QR Code Component ────────────────────────────────────────────────────────
+function QrCode({ url }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!url || !ref.current) return;
+    ref.current.innerHTML = "";
+    try {
+      new QRCode(ref.current, {
+        text:         url,
+        width:        180,
+        height:       180,
+        colorDark:    "#000000",
+        colorLight:   "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    } catch(e) {
+      ref.current.innerHTML = '<p style="color:#ef4444;font-size:12px;padding:8px">QR generation failed</p>';
+    }
+  }, [url]);
+  return (
+    <div className="flex justify-center mb-3">
+      <div className="rounded-xl p-3 bg-white inline-block shadow-lg" ref={ref}/>
+    </div>
+  );
+}
+
 // ── TOTP Setup Component ─────────────────────────────────────────────────────
 function TotpSetup() {
   const [phase, setPhase]   = React.useState("idle");
@@ -1318,12 +1346,7 @@ function TotpSetup() {
       <p className="text-xs mb-3" style={{color:"var(--text-muted)"}}>
         Scan with <strong style={{color:"var(--text)"}}>Bitwarden</strong>, <strong style={{color:"var(--text)"}}>Google Authenticator</strong>, or any TOTP app. Then enter the 6-digit code to verify.
       </p>
-      <div className="flex justify-center mb-3">
-        <div className="rounded-xl p-3 bg-white inline-block">
-          <img src={"https://chart.googleapis.com/chart?cht=qr&chs=180x180&chl="+encodeURIComponent(qrUrl)+"&choe=UTF-8"}
-            alt="TOTP QR Code" width="180" height="180" className="rounded-lg block"/>
-        </div>
-      </div>
+      <QrCode url={qrUrl}/>
       <details className="mb-3">
         <summary className="text-xs cursor-pointer" style={{color:"var(--text-faint)"}}>Can't scan? Enter manually</summary>
         <div className="mt-2 rounded-lg px-3 py-2 font-mono text-xs tracking-widest text-center select-all break-all"
