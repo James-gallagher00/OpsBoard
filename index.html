@@ -4,25 +4,6 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>OpsBoard</title>
-  <script>
-    (function(){
-      // Disable right-click context menu
-      document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
-      // Block common DevTools keyboard shortcuts
-      document.addEventListener('keydown', function(e){
-        // F12
-        if (e.keyCode === 123) { e.preventDefault(); return false; }
-        // Ctrl+Shift+I / Cmd+Opt+I
-        if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.keyCode === 73) { e.preventDefault(); return false; }
-        // Ctrl+Shift+J / Cmd+Opt+J
-        if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.keyCode === 74) { e.preventDefault(); return false; }
-        // Ctrl+Shift+C
-        if ((e.ctrlKey||e.metaKey) && e.shiftKey && e.keyCode === 67) { e.preventDefault(); return false; }
-        // Ctrl+U (view source)
-        if ((e.ctrlKey||e.metaKey) && e.keyCode === 85) { e.preventDefault(); return false; }
-      });
-    })();
-  </script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%236366f1'/><rect x='1' y='1' width='6' height='6' rx='1' fill='white' opacity='0.9'/><rect x='9' y='1' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='1' y='9' width='6' height='6' rx='1' fill='white' opacity='0.6'/><rect x='9' y='9' width='6' height='6' rx='1' fill='white' opacity='0.9'/></svg>"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -3429,5 +3410,15 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
+  <script>
+    (function(){
+      document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+      document.addEventListener('keydown', function(e){
+        if (e.keyCode === 123) { e.preventDefault(); return false; }
+        if ((e.ctrlKey||e.metaKey) && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) { e.preventDefault(); return false; }
+        if ((e.ctrlKey||e.metaKey) && e.keyCode === 85) { e.preventDefault(); return false; }
+      });
+    })();
+  </script>
 </body>
 </html>
